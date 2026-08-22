@@ -438,7 +438,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
                 {textContent}
               </Text>
             </ScrollView>
-          ) : SafeWebView ? (
+          ) : SafeWebView && pdfBase64 ? (
             <SafeWebView
               ref={webViewRef}
               originWhitelist={['*']}

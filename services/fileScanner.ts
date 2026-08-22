@@ -165,14 +165,19 @@ export const FileScannerService = {
    * Reads raw base64 or text content of a file on demand
    */
   async readFileContent(book: BookItem, encoding: 'utf8' | 'base64' = 'utf8'): Promise<string> {
+    // Large file safety guard: Files > 25MB will exhaust Android JVM string heap if converted to base64
+    if (encoding === 'base64' && book.fileSize > 25 * 1024 * 1024) {
+      throw new Error('FILE_TOO_LARGE_FOR_BASE64');
+    }
+
     const localUri = await this.ensureLocalFileUri(book);
     try {
       const content = await FileSystem.readAsStringAsync(localUri, {
         encoding: encoding === 'base64' ? FileSystem.EncodingType.Base64 : FileSystem.EncodingType.UTF8,
       });
       return content;
-    } catch (e) {
-      console.error(`Failed to read file ${book.title}:`, e);
+    } catch (e: any) {
+      console.warn(`Safe readFileContent for ${book.title}:`, e?.message || e);
       throw e;
     }
   },
