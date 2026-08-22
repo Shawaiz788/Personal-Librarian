@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,7 +15,6 @@ import { BookItem } from '../../types/book';
 import { FileScannerService } from '../../services/fileScanner';
 import { Palette } from '../../constants/theme';
 
-// Safely resolve WebView component without crashing if native module is not registered yet
 let SafeWebView: any = null;
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -37,20 +37,27 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
   onClose,
   onUpdateProgress,
 }) => {
+  const webViewRef = useRef<any>(null);
   const [loading, setLoading] = useState(true);
   const [pdfBase64, setPdfBase64] = useState<string | null>(null);
   const [textContent, setTextContent] = useState<string | null>(null);
   const [themeMode, setThemeMode] = useState<'light' | 'sepia' | 'dark'>('light');
   const [fontSize, setFontSize] = useState(16);
-  const [currentProgress, setCurrentProgress] = useState(book?.readingProgress || 0);
+
+  // PDF Paging State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [isJumpModalVisible, setIsJumpModalVisible] = useState(false);
+  const [jumpPageInput, setJumpPageInput] = useState('1');
 
   useEffect(() => {
     if (!book || !visible) return;
 
-    setCurrentProgress(book.readingProgress || 0);
     setLoading(true);
     setPdfBase64(null);
     setTextContent(null);
+    setCurrentPage(1);
+    setTotalPages(1);
 
     const loadBookContent = async () => {
       try {
@@ -66,7 +73,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
             const b64 = await FileScannerService.readFileContent(book, 'base64');
             setPdfBase64(b64);
           } catch (e) {
-            console.warn('Could not read base64, will use file preview:', e);
+            console.warn('Could not read base64:', e);
           }
         }
       } catch (err) {
@@ -85,14 +92,59 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
     FileScannerService.shareDocumentSafely(book);
   };
 
-  const handleProgressTap = (val: number) => {
-    setCurrentProgress(val);
-    onUpdateProgress(book, val);
+  const handleClose = () => {
+    const progress = totalPages > 0 ? Math.round((currentPage / totalPages) * 100) : 0;
+    onUpdateProgress(book, progress);
+    onClose();
   };
 
-  const handleClose = () => {
-    onUpdateProgress(book, currentProgress);
-    onClose();
+  // Paging actions sent to WebView
+  const goToNextPage = () => {
+    if (currentPage < totalPages) {
+      const next = currentPage + 1;
+      setCurrentPage(next);
+      webViewRef.current?.injectJavaScript(`window.renderPdfPage(${next}); true;`);
+      onUpdateProgress(book, Math.round((next / totalPages) * 100));
+    }
+  };
+
+  const goToPrevPage = () => {
+    if (currentPage > 1) {
+      const prev = currentPage - 1;
+      setCurrentPage(prev);
+      webViewRef.current?.injectJavaScript(`window.renderPdfPage(${prev}); true;`);
+      onUpdateProgress(book, Math.round((prev / totalPages) * 100));
+    }
+  };
+
+  const handleJumpToPage = () => {
+    const target = parseInt(jumpPageInput, 10);
+    if (!isNaN(target) && target >= 1 && target <= totalPages) {
+      setCurrentPage(target);
+      webViewRef.current?.injectJavaScript(`window.renderPdfPage(${target}); true;`);
+      onUpdateProgress(book, Math.round((target / totalPages) * 100));
+      setIsJumpModalVisible(false);
+    }
+  };
+
+  const handleWebViewMessage = (event: any) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === 'TOTAL_PAGES') {
+        setTotalPages(data.count);
+        // If book has existing progress, calculate starting page
+        if (book.readingProgress && book.readingProgress > 0) {
+          const startPage = Math.max(1, Math.min(data.count, Math.round((book.readingProgress / 100) * data.count)));
+          setCurrentPage(startPage);
+          webViewRef.current?.injectJavaScript(`window.renderPdfPage(${startPage}); true;`);
+        }
+      } else if (data.type === 'PAGE_CHANGED') {
+        setCurrentPage(data.page);
+        onUpdateProgress(book, Math.round((data.page / totalPages) * 100));
+      }
+    } catch {
+      // ignore
+    }
   };
 
   const getReaderColors = () => {
@@ -100,15 +152,15 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
       case 'sepia':
         return { bg: '#F8F1E5', text: '#5F4B32', border: '#EBDDC7', headerBg: '#EFE5D3' };
       case 'dark':
-        return { bg: '#121824', text: '#E2E8F0', border: '#1E293B', headerBg: '#0F172A' };
+        return { bg: '#0F172A', text: '#E2E8F0', border: '#1E293B', headerBg: '#0F172A' };
       default:
-        return { bg: '#FFFFFF', text: '#1E293B', border: '#E2E8F0', headerBg: '#FFFFFF' };
+        return { bg: '#F8FAFC', text: '#1E293B', border: '#E2E8F0', headerBg: '#FFFFFF' };
     }
   };
 
   const currentTheme = getReaderColors();
 
-  // Embedded PDF Viewer with PDF.js
+  // High-performance virtualized single/paged PDF.js reader
   const pdfViewerHtml = `
     <!DOCTYPE html>
     <html>
@@ -117,44 +169,104 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
         <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
         <style>
           * { box-sizing: border-box; margin: 0; padding: 0; }
-          body {
+          html, body {
+            width: 100%;
+            height: 100%;
             background-color: ${themeMode === 'dark' ? '#0F172A' : '#F1F5F9'};
             color: ${themeMode === 'dark' ? '#F8FAFC' : '#0F172A'};
             display: flex;
             flex-direction: column;
             align-items: center;
-            padding: 12px 6px;
+            justifyContent: center;
+            overflow-x: hidden;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
           }
-          #pdf-container {
+          #pdf-wrapper {
             width: 100%;
+            height: 100%;
             display: flex;
-            flex-direction: column;
             align-items: center;
-            gap: 14px;
+            justifyContent: center;
+            padding: 8px;
           }
-          .pdf-page-canvas {
+          #pdf-canvas {
             max-width: 100%;
-            height: auto;
-            border-radius: 6px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+            max-height: 98vh;
+            border-radius: 8px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.18);
             background: #FFFFFF;
           }
-          #loading-status {
-            padding: 24px;
+          #status-overlay {
+            position: absolute;
             font-size: 14px;
-            font-weight: 600;
+            font-weight: 700;
             color: #6366F1;
           }
         </style>
       </head>
       <body>
-        <div id="loading-status">Loading PDF Pages...</div>
-        <div id="pdf-container"></div>
+        <div id="status-overlay">Loading PDF Document...</div>
+        <div id="pdf-wrapper">
+          <canvas id="pdf-canvas"></canvas>
+        </div>
 
         <script>
           const pdfData = "${pdfBase64 || ''}";
           pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+          let pdfDoc = null;
+          let pageRendering = false;
+          let pageNumPending = null;
+
+          function sendToReactNative(obj) {
+            if (window.ReactNativeWebView) {
+              window.ReactNativeWebView.postMessage(JSON.stringify(obj));
+            }
+          }
+
+          async function renderPdfPage(num) {
+            if (!pdfDoc) return;
+            pageRendering = true;
+
+            try {
+              const page = await pdfDoc.getPage(num);
+              const canvas = document.getElementById('pdf-canvas');
+              const ctx = canvas.getContext('2d');
+
+              // Responsive scale based on viewport width
+              const unscaledViewport = page.getViewport({ scale: 1 });
+              const scale = (window.innerWidth - 16) / unscaledViewport.width;
+              const viewport = page.getViewport({ scale: Math.max(scale, 1.2) });
+
+              canvas.height = viewport.height;
+              canvas.width = viewport.width;
+
+              const renderContext = {
+                canvasContext: ctx,
+                viewport: viewport
+              };
+
+              await page.render(renderContext).promise;
+              document.getElementById('status-overlay').style.display = 'none';
+              pageRendering = false;
+
+              if (pageNumPending !== null) {
+                renderPdfPage(pageNumPending);
+                pageNumPending = null;
+              }
+            } catch (err) {
+              pageRendering = false;
+              console.error('Page render error:', err);
+            }
+          }
+
+          window.renderPdfPage = function(num) {
+            if (pageRendering) {
+              pageNumPending = num;
+            } else {
+              renderPdfPage(num);
+            }
+          };
 
           if (pdfData) {
             const rawData = atob(pdfData);
@@ -163,32 +275,13 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
               uint8Array[i] = rawData.charCodeAt(i);
             }
 
-            pdfjsLib.getDocument({ data: uint8Array }).promise.then(async (pdf) => {
-              document.getElementById('loading-status').style.display = 'none';
-              const container = document.getElementById('pdf-container');
-              
-              for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-                const page = await pdf.getPage(pageNum);
-                const viewport = page.getViewport({ scale: 1.5 });
-                
-                const canvas = document.createElement('canvas');
-                canvas.className = 'pdf-page-canvas';
-                const context = canvas.getContext('2d');
-                canvas.height = viewport.height;
-                canvas.width = viewport.width;
-                
-                container.appendChild(canvas);
-                
-                await page.render({
-                  canvasContext: context,
-                  viewport: viewport
-                }).promise;
-              }
+            pdfjsLib.getDocument({ data: uint8Array }).promise.then((pdf) => {
+              pdfDoc = pdf;
+              sendToReactNative({ type: 'TOTAL_PAGES', count: pdf.numPages });
+              renderPdfPage(1);
             }).catch(err => {
-              document.getElementById('loading-status').innerText = 'Rendering PDF... Tap share to open externally if needed.';
+              document.getElementById('status-overlay').innerText = 'Failed to load PDF: ' + err.message;
             });
-          } else {
-            document.getElementById('loading-status').innerText = 'Document ready for reading.';
           }
         </script>
       </body>
@@ -198,7 +291,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={handleClose}>
       <SafeAreaView style={[styles.container, { backgroundColor: currentTheme.bg }]} edges={['top', 'bottom']}>
-        {/* Top Reader Navigation Bar */}
+        {/* Top Navigation Bar */}
         <View style={[styles.header, { backgroundColor: currentTheme.headerBg, borderColor: currentTheme.border }]}>
           <TouchableOpacity onPress={handleClose} style={styles.backBtn} activeOpacity={0.7}>
             <Ionicons name="chevron-back" size={24} color={currentTheme.text} />
@@ -251,7 +344,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
           </View>
         </View>
 
-        {/* Reader Document Body */}
+        {/* Reader Body */}
         <View style={styles.readerBody}>
           {loading ? (
             <View style={styles.loadingContainer}>
@@ -280,6 +373,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
             </ScrollView>
           ) : SafeWebView ? (
             <SafeWebView
+              ref={webViewRef}
               originWhitelist={['*']}
               source={{ html: pdfViewerHtml }}
               style={[styles.webView, { backgroundColor: currentTheme.bg }]}
@@ -287,6 +381,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
               scalesPageToFit={true}
               javaScriptEnabled={true}
               domStorageEnabled={true}
+              onMessage={handleWebViewMessage}
             />
           ) : (
             <View style={styles.fallbackContainer}>
@@ -301,33 +396,80 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
           )}
         </View>
 
-        {/* Bottom Reading Progress Bar */}
-        <View style={[styles.footer, { backgroundColor: currentTheme.headerBg, borderColor: currentTheme.border }]}>
-          <Text style={[styles.progressLabel, { color: currentTheme.text }]}>
-            Reading Progress: {Math.round(currentProgress)}%
-          </Text>
-          <View style={styles.progressBtnRow}>
-            {[0, 25, 50, 75, 100].map((val) => (
-              <TouchableOpacity
-                key={val}
-                style={[
-                  styles.progressPill,
-                  currentProgress === val && styles.progressPillActive,
-                ]}
-                onPress={() => handleProgressTap(val)}
-              >
-                <Text
-                  style={[
-                    styles.progressPillText,
-                    currentProgress === val && styles.progressPillTextActive,
-                  ]}
-                >
-                  {val === 0 ? 'Start' : val === 100 ? 'Finish' : `${val}%`}
-                </Text>
-              </TouchableOpacity>
-            ))}
+        {/* Interactive Bottom Paging Bar */}
+        {pdfBase64 && totalPages > 1 && (
+          <View style={[styles.pagingBar, { backgroundColor: currentTheme.headerBg, borderColor: currentTheme.border }]}>
+            {/* Previous Page Button */}
+            <TouchableOpacity
+              style={[styles.pageBtn, currentPage <= 1 && styles.pageBtnDisabled]}
+              onPress={goToPrevPage}
+              disabled={currentPage <= 1}
+            >
+              <Ionicons name="chevron-back" size={18} color={currentPage <= 1 ? Palette.textDim : '#FFF'} />
+              <Text style={[styles.pageBtnText, currentPage <= 1 && { color: Palette.textDim }]}>Previous</Text>
+            </TouchableOpacity>
+
+            {/* Page Counter & Direct Jump */}
+            <TouchableOpacity
+              style={styles.pageJumpBadge}
+              onPress={() => {
+                setJumpPageInput(String(currentPage));
+                setIsJumpModalVisible(true);
+              }}
+            >
+              <Text style={[styles.pageCounterText, { color: currentTheme.text }]}>
+                Page <Text style={styles.pageHighlight}>{currentPage}</Text> of {totalPages}
+              </Text>
+              <Ionicons name="search" size={12} color={Palette.primary} style={{ marginLeft: 4 }} />
+            </TouchableOpacity>
+
+            {/* Next Page Button */}
+            <TouchableOpacity
+              style={[styles.pageBtn, currentPage >= totalPages && styles.pageBtnDisabled]}
+              onPress={goToNextPage}
+              disabled={currentPage >= totalPages}
+            >
+              <Text style={[styles.pageBtnText, currentPage >= totalPages && { color: Palette.textDim }]}>Next</Text>
+              <Ionicons name="chevron-forward" size={18} color={currentPage >= totalPages ? Palette.textDim : '#FFF'} />
+            </TouchableOpacity>
           </View>
-        </View>
+        )}
+
+        {/* Page Jump Modal */}
+        <Modal
+          visible={isJumpModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setIsJumpModalVisible(false)}
+        >
+          <View style={styles.jumpModalOverlay}>
+            <View style={styles.jumpModalCard}>
+              <Text style={styles.jumpModalTitle}>Jump to Page</Text>
+              <Text style={styles.jumpModalSub}>Enter page number between 1 and {totalPages}:</Text>
+
+              <TextInput
+                style={styles.jumpInput}
+                keyboardType="numeric"
+                value={jumpPageInput}
+                onChangeText={setJumpPageInput}
+                autoFocus
+              />
+
+              <View style={styles.jumpActions}>
+                <TouchableOpacity
+                  style={styles.jumpCancelBtn}
+                  onPress={() => setIsJumpModalVisible(false)}
+                >
+                  <Text style={styles.jumpCancelText}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.jumpConfirmBtn} onPress={handleJumpToPage}>
+                  <Text style={styles.jumpConfirmText}>Go to Page</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </Modal>
   );
@@ -446,7 +588,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 14,
   },
-  footer: {
+  pagingBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -454,29 +596,103 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderTopWidth: 1,
   },
-  progressLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  progressBtnRow: {
+  pageBtn: {
     flexDirection: 'row',
-    gap: 6,
+    alignItems: 'center',
+    backgroundColor: Palette.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 4,
   },
-  progressPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
+  pageBtnDisabled: {
+    backgroundColor: Palette.bg,
+    borderWidth: 1,
+    borderColor: Palette.border,
+  },
+  pageBtnText: {
+    color: '#FFF',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  pageJumpBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
     backgroundColor: 'rgba(0, 0, 0, 0.04)',
   },
-  progressPillActive: {
-    backgroundColor: Palette.primary,
+  pageCounterText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
-  progressPillText: {
-    fontSize: 11,
-    fontWeight: '700',
+  pageHighlight: {
+    color: Palette.primary,
+    fontWeight: '800',
+  },
+  jumpModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  jumpModalCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: Palette.surface,
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: Palette.border,
+  },
+  jumpModalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: Palette.text,
+  },
+  jumpModalSub: {
+    fontSize: 12,
     color: Palette.textMuted,
+    marginTop: 4,
+    marginBottom: 16,
   },
-  progressPillTextActive: {
+  jumpInput: {
+    backgroundColor: Palette.bg,
+    borderWidth: 1,
+    borderColor: Palette.border,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 18,
+    fontWeight: '800',
+    color: Palette.text,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  jumpActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+  },
+  jumpCancelBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  jumpCancelText: {
+    color: Palette.textMuted,
+    fontWeight: '600',
+  },
+  jumpConfirmBtn: {
+    backgroundColor: Palette.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  jumpConfirmText: {
     color: '#FFF',
+    fontWeight: '700',
   },
 });
