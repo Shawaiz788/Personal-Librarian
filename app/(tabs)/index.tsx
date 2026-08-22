@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -17,6 +17,7 @@ import { BookshelfRow } from '../../components/library/BookshelfRow';
 import { BookListItem } from '../../components/library/BookListItem';
 import { EmptyState } from '../../components/common/EmptyState';
 import { ScanProgressModal } from '../../components/library/ScanProgressModal';
+import { ScanDialogModal } from '../../components/library/ScanDialogModal';
 import { SearchEngineService } from '../../services/searchEngine';
 import { Palette } from '../../constants/theme';
 import { BookItem } from '../../types/book';
@@ -40,6 +41,7 @@ export default function LibraryScreen() {
   } = useLibrary();
 
   const { isTablet, numColumns } = useResponsiveLayout();
+  const [showScanDialog, setShowScanDialog] = useState(false);
 
   const formatCounts = useMemo(() => {
     return SearchEngineService.getFormatCounts(books);
@@ -93,7 +95,7 @@ export default function LibraryScreen() {
           onSearchChange={(q) => setFilter((prev) => ({ ...prev, query: q }))}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
-          onScanDevice={() => scanDevice(false)}
+          onScanDevice={() => setShowScanDialog(true)}
           onImport={importDocuments}
           isScanning={isScanning}
           totalBooks={books.length}
@@ -118,10 +120,10 @@ export default function LibraryScreen() {
         {books.length === 0 ? (
           <EmptyState
             title="Scan Your Device for Books & PDFs"
-            description="Automatically search your device folders to find all PDFs, EPUBs, documents, and eBooks without picking files manually."
-            actionLabel="Scan My Device"
-            onAction={() => scanDevice(false)}
-            secondaryActionLabel="Pick Specific Files"
+            description="Search your device storage or Downloads folder to find all PDFs, EPUBs, documents, and eBooks."
+            actionLabel="Scan Books & PDFs"
+            onAction={() => setShowScanDialog(true)}
+            secondaryActionLabel="Select Files"
             onSecondaryAction={importDocuments}
             isLoading={isScanning}
             iconName="scan-circle-outline"
@@ -133,7 +135,7 @@ export default function LibraryScreen() {
             actionLabel="Reset Search & Filters"
             onAction={handleResetFilters}
             secondaryActionLabel="Scan More Folders"
-            onSecondaryAction={() => scanDevice(true)}
+            onSecondaryAction={() => setShowScanDialog(true)}
             iconName="search"
           />
         ) : viewMode === 'grid' ? (
@@ -188,6 +190,14 @@ export default function LibraryScreen() {
             showsVerticalScrollIndicator={false}
           />
         )}
+
+        {/* Scan Options Dialog */}
+        <ScanDialogModal
+          visible={showScanDialog}
+          onClose={() => setShowScanDialog(false)}
+          onScanFolder={() => scanDevice(true)}
+          onPickFiles={importDocuments}
+        />
 
         {/* Live Auto-Scan Progress Modal */}
         <ScanProgressModal

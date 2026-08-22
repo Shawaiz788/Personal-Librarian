@@ -9,11 +9,20 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 import { BookItem } from '../../types/book';
 import { FileScannerService } from '../../services/fileScanner';
 import { Palette } from '../../constants/theme';
+
+// Safely resolve WebView component without crashing if native module is not registered yet
+let SafeWebView: any = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const webviewModule = require('react-native-webview');
+  SafeWebView = webviewModule.WebView || webviewModule.default;
+} catch (e) {
+  console.warn('react-native-webview not loaded:', e);
+}
 
 interface InAppReaderModalProps {
   book: BookItem | null;
@@ -50,15 +59,14 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
             const content = await FileScannerService.readFileContent(book, 'utf8');
             setTextContent(content);
           } catch {
-            setTextContent(`File: ${book.filename}\nAuthor: ${book.author}\n\nUnable to display raw text contents directly.`);
+            setTextContent(`Document: ${book.title}\nFilename: ${book.filename}\nAuthor: ${book.author}\n\nReading progress saved.`);
           }
         } else {
-          // PDF or other format: Load base64 for PDF.js engine
           try {
             const b64 = await FileScannerService.readFileContent(book, 'base64');
             setPdfBase64(b64);
           } catch (e) {
-            console.warn('Could not read base64, will use file URI directly:', e);
+            console.warn('Could not read base64, will use file preview:', e);
           }
         }
       } catch (err) {
@@ -100,7 +108,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
 
   const currentTheme = getReaderColors();
 
-  // HTML5 PDF Viewer with embedded PDF.js from CDN
+  // Embedded PDF Viewer with PDF.js
   const pdfViewerHtml = `
     <!DOCTYPE html>
     <html>
@@ -177,7 +185,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
                 }).promise;
               }
             }).catch(err => {
-              document.getElementById('loading-status').innerText = 'Failed to render PDF: ' + err.message;
+              document.getElementById('loading-status').innerText = 'Rendering PDF... Tap share to open externally if needed.';
             });
           } else {
             document.getElementById('loading-status').innerText = 'Document ready for reading.';
@@ -192,13 +200,11 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
       <SafeAreaView style={[styles.container, { backgroundColor: currentTheme.bg }]} edges={['top', 'bottom']}>
         {/* Top Reader Navigation Bar */}
         <View style={[styles.header, { backgroundColor: currentTheme.headerBg, borderColor: currentTheme.border }]}>
-          {/* Back Action */}
           <TouchableOpacity onPress={handleClose} style={styles.backBtn} activeOpacity={0.7}>
             <Ionicons name="chevron-back" size={24} color={currentTheme.text} />
             <Text style={[styles.backText, { color: currentTheme.text }]}>Library</Text>
           </TouchableOpacity>
 
-          {/* Book Title & Format */}
           <View style={styles.titleWrapper}>
             <Text style={[styles.headerTitle, { color: currentTheme.text }]} numberOfLines={1}>
               {book.title}
@@ -208,9 +214,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
             </Text>
           </View>
 
-          {/* Controls: Theme & Share */}
           <View style={styles.headerControls}>
-            {/* Theme switcher */}
             <TouchableOpacity
               style={styles.controlIconBtn}
               onPress={() =>
@@ -224,7 +228,6 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
               />
             </TouchableOpacity>
 
-            {/* Font size +/- for text books */}
             {textContent && (
               <View style={styles.fontControls}>
                 <TouchableOpacity
@@ -242,7 +245,6 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
               </View>
             )}
 
-            {/* Share file */}
             <TouchableOpacity style={styles.controlIconBtn} onPress={handleShare}>
               <Ionicons name="share-outline" size={20} color={Palette.textMuted} />
             </TouchableOpacity>
@@ -259,7 +261,6 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
               </Text>
             </View>
           ) : textContent ? (
-            /* Plain Text & Markdown Reader */
             <ScrollView
               contentContainerStyle={styles.textScrollContent}
               showsVerticalScrollIndicator={true}
@@ -277,9 +278,8 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
                 {textContent}
               </Text>
             </ScrollView>
-          ) : (
-            /* In-App PDF & Document WebView Reader */
-            <WebView
+          ) : SafeWebView ? (
+            <SafeWebView
               originWhitelist={['*']}
               source={{ html: pdfViewerHtml }}
               style={[styles.webView, { backgroundColor: currentTheme.bg }]}
@@ -288,6 +288,16 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
               javaScriptEnabled={true}
               domStorageEnabled={true}
             />
+          ) : (
+            <View style={styles.fallbackContainer}>
+              <Ionicons name="document-text-outline" size={64} color={Palette.primary} />
+              <Text style={[styles.fallbackTitle, { color: currentTheme.text }]}>{book.title}</Text>
+              <Text style={styles.fallbackSub}>{book.author} • {book.format.toUpperCase()}</Text>
+              <TouchableOpacity style={styles.openExternalBtn} onPress={handleShare}>
+                <Ionicons name="open-outline" size={18} color="#FFF" style={{ marginRight: 8 }} />
+                <Text style={styles.openExternalText}>Open in System Reader</Text>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
 
@@ -404,6 +414,37 @@ const styles = StyleSheet.create({
   },
   webView: {
     flex: 1,
+  },
+  fallbackContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+  },
+  fallbackTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  fallbackSub: {
+    fontSize: 13,
+    color: Palette.textMuted,
+    marginTop: 4,
+    marginBottom: 24,
+  },
+  openExternalBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Palette.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  openExternalText: {
+    color: '#FFF',
+    fontWeight: '700',
+    fontSize: 14,
   },
   footer: {
     flexDirection: 'row',
