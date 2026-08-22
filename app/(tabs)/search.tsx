@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   FlatList,
   StatusBar,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -75,6 +76,30 @@ export default function SearchScreen() {
     if (displayCount < filteredBooks.length) {
       setDisplayCount((prev) => Math.min(prev + PAGE_SIZE, filteredBooks.length));
     }
+  }, [displayCount, filteredBooks.length]);
+
+  const renderFooter = useCallback(() => {
+    if (displayCount < filteredBooks.length) {
+      return (
+        <View style={styles.footerLoader}>
+          <ActivityIndicator size="small" color={Palette.primary} style={{ marginRight: 8 }} />
+          <Text style={styles.footerLoaderText}>
+            Loading more books ({displayCount} of {filteredBooks.length})...
+          </Text>
+        </View>
+      );
+    }
+    if (filteredBooks.length > PAGE_SIZE) {
+      return (
+        <View style={styles.footerLoader}>
+          <Ionicons name="checkmark-circle" size={16} color={Palette.success} style={{ marginRight: 6 }} />
+          <Text style={styles.footerEndText}>
+            All {filteredBooks.length} books loaded
+          </Text>
+        </View>
+      );
+    }
+    return null;
   }, [displayCount, filteredBooks.length]);
 
   const renderGridItem = useCallback(
@@ -266,6 +291,7 @@ export default function SearchScreen() {
             data={paginatedBooks}
             keyExtractor={keyExtractor}
             ListHeaderComponent={renderHeader}
+            ListFooterComponent={renderFooter}
             renderItem={renderListItem}
             initialNumToRender={16}
             maxToRenderPerBatch={16}
@@ -291,6 +317,7 @@ export default function SearchScreen() {
             numColumns={numColumns}
             keyExtractor={keyExtractor}
             ListHeaderComponent={renderHeader}
+            ListFooterComponent={renderFooter}
             renderItem={renderGridItem}
             initialNumToRender={16}
             maxToRenderPerBatch={16}
@@ -443,6 +470,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: Palette.primary,
+  },
+  footerLoader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+    gap: 6,
+  },
+  footerLoaderText: {
+    fontSize: 13,
+    color: Palette.textMuted,
+    fontWeight: '600',
+  },
+  footerEndText: {
+    fontSize: 12,
+    color: Palette.textDim,
+    fontWeight: '600',
   },
   listContent: {
     paddingBottom: 50,
