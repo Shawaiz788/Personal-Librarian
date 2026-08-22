@@ -154,6 +154,10 @@ export default function LibraryScreen() {
                 />
               </View>
             )}
+            initialNumToRender={12}
+            maxToRenderPerBatch={12}
+            windowSize={5}
+            removeClippedSubviews={true}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
           />
@@ -186,6 +190,10 @@ export default function LibraryScreen() {
                 isSelected={selectedBook?.id === item.id}
               />
             )}
+            initialNumToRender={16}
+            maxToRenderPerBatch={16}
+            windowSize={5}
+            removeClippedSubviews={true}
             contentContainerStyle={styles.denseListContent}
             showsVerticalScrollIndicator={false}
           />

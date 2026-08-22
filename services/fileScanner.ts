@@ -123,12 +123,11 @@ function getFilenameFromUri(uri: string): string {
 
 export const FileScannerService = {
   /**
-   * Converts any content:// or remote URI to a local file:// URI by caching it locally
+   * Converts any content:// or remote URI to a local file:// URI by caching on demand only when reading
    */
   async ensureLocalFileUri(book: BookItem): Promise<string> {
     if (!book.uri) return '';
 
-    // If it's already a file:// URI that exists, return it
     if (book.uri.startsWith('file://')) {
       return book.uri;
     }
@@ -140,7 +139,6 @@ export const FileScannerService = {
         await FileSystem.makeDirectoryAsync(booksDir, { intermediates: true });
       }
 
-      // Safe alphanumeric filename with original extension
       const ext = book.filename.split('.').pop() || book.format || 'pdf';
       const safeFilename = `doc_${book.id.replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`;
       const destinationUri = `${booksDir}${safeFilename}`;
@@ -150,7 +148,6 @@ export const FileScannerService = {
         return destinationUri;
       }
 
-      // Copy from content:// or other scheme to local file:// URI
       await FileSystem.copyAsync({
         from: book.uri,
         to: destinationUri,
@@ -164,7 +161,7 @@ export const FileScannerService = {
   },
 
   /**
-   * Reads raw base64 or text content of a file
+   * Reads raw base64 or text content of a file on demand
    */
   async readFileContent(book: BookItem, encoding: 'utf8' | 'base64' = 'utf8'): Promise<string> {
     const localUri = await this.ensureLocalFileUri(book);
@@ -180,8 +177,87 @@ export const FileScannerService = {
   },
 
   /**
-   * Automatically scans device storage recursively using StorageAccessFramework (Android)
-   * or Document Directory (iOS/Web)
+   * High performance document ingestion:
+   * Uses copyToCacheDirectory: false to prevent memory exhaustion and disk freeze when selecting 1,000+ books.
+   * Processes items in non-blocking asynchronous chunks.
+   */
+  async pickAndImportDocuments(
+    onChunkProcessed?: (processedCount: number, totalCount: number) => void
+  ): Promise<BookItem[]> {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [
+          'application/pdf',
+          'application/epub+zip',
+          'text/plain',
+          'text/markdown',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'application/msword',
+          'application/x-cbr',
+          'application/x-cbz',
+          '*/*',
+        ],
+        multiple: true,
+        copyToCacheDirectory: false, // CRITICAL: Never copy thousands of files into cache simultaneously!
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return [];
+      }
+
+      const total = result.assets.length;
+      const importedBooks: BookItem[] = [];
+
+      // Chunk processing to keep JS event loop responsive
+      const chunkSize = 50;
+      for (let i = 0; i < total; i += chunkSize) {
+        const chunk = result.assets.slice(i, i + chunkSize);
+
+        for (const asset of chunk) {
+          const filename = asset.name || 'Untitled Document';
+          const { title, author } = parseBookTitleAndAuthor(filename);
+          const format = getFormatFromExtension(filename);
+          const gradient = getCoverGradientForTitle(title);
+
+          const hashId = Math.abs(
+            (asset.uri || filename).split('').reduce((a: number, b: string) => ((a << 5) - a + b.charCodeAt(0)) | 0, 0)
+          );
+
+          const book: BookItem = {
+            id: `book_${hashId}_${Date.now() % 100000}`,
+            title,
+            author,
+            format,
+            uri: asset.uri,
+            filename,
+            fileSize: asset.size || 0,
+            dateAdded: Date.now(),
+            readingProgress: 0,
+            coverColor: gradient[0],
+            coverGradient: gradient,
+            tags: [format.toUpperCase()],
+          };
+
+          importedBooks.push(book);
+        }
+
+        if (onChunkProcessed) {
+          onChunkProcessed(Math.min(i + chunkSize, total), total);
+        }
+
+        // Allow UI to breathe
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+
+      return importedBooks;
+    } catch (error) {
+      console.error('Error picking documents:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Fast device crawler
    */
   async autoScanDevice(
     onProgress?: (scannedDirs: number, foundCount: number, currentName: string) => void,
@@ -259,7 +335,7 @@ export const FileScannerService = {
 
                 foundBooks.push(book);
 
-                if (onProgress) {
+                if (onProgress && foundBooks.length % 20 === 0) {
                   onProgress(scannedDirCount, foundBooks.length, filename);
                 }
               }
@@ -313,65 +389,7 @@ export const FileScannerService = {
   },
 
   /**
-   * Pick single or multiple files from device storage using expo-document-picker
-   */
-  async pickAndImportDocuments(): Promise<BookItem[]> {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: [
-          'application/pdf',
-          'application/epub+zip',
-          'text/plain',
-          'text/markdown',
-          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-          'application/msword',
-          'application/x-cbr',
-          'application/x-cbz',
-          '*/*',
-        ],
-        multiple: true,
-        copyToCacheDirectory: true,
-      });
-
-      if (result.canceled || !result.assets || result.assets.length === 0) {
-        return [];
-      }
-
-      const importedBooks: BookItem[] = [];
-
-      for (const asset of result.assets) {
-        const filename = asset.name || 'Untitled Document';
-        const { title, author } = parseBookTitleAndAuthor(filename);
-        const format = getFormatFromExtension(filename);
-        const gradient = getCoverGradientForTitle(title);
-
-        const book: BookItem = {
-          id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          title,
-          author,
-          format,
-          uri: asset.uri,
-          filename,
-          fileSize: asset.size || 0,
-          dateAdded: Date.now(),
-          readingProgress: 0,
-          coverColor: gradient[0],
-          coverGradient: gradient,
-          tags: [format.toUpperCase()],
-        };
-
-        importedBooks.push(book);
-      }
-
-      return importedBooks;
-    } catch (error) {
-      console.error('Error picking documents:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Share file externally safely using local file URI
+   * Share file externally safely
    */
   async shareDocumentSafely(book: BookItem): Promise<void> {
     try {
