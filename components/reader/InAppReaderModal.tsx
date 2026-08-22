@@ -49,6 +49,8 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
   const [jumpPageInput, setJumpPageInput] = useState('1');
 
   const totalPagesRef = useRef(1);
+  const touchStartXRef = useRef(0);
+  const touchStartYRef = useRef(0);
   const layoutRef = useRef({
     width: Dimensions.get('window').width,
     height: Dimensions.get('window').height,
@@ -199,17 +201,35 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
     }
   };
 
-  // Enhanced PanResponder for responsive page-turn swipes
+  // Direct touch swipe handlers
+  const handleTouchStart = (e: any) => {
+    touchStartXRef.current = e.nativeEvent.pageX;
+    touchStartYRef.current = e.nativeEvent.pageY;
+  };
+
+  const handleTouchEnd = (e: any) => {
+    const dx = e.nativeEvent.pageX - touchStartXRef.current;
+    const dy = e.nativeEvent.pageY - touchStartYRef.current;
+    if (Math.abs(dx) > 30 && Math.abs(dx) > Math.abs(dy) * 1.1) {
+      if (dx < 0) {
+        goToNextPage();
+      } else {
+        goToPrevPage();
+      }
+    }
+  };
+
+  // PanResponder backup for swipe gestures
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
+      onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: (_, gestureState) => {
-        return Math.abs(gestureState.dx) > 15 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
+        return Math.abs(gestureState.dx) > 15;
       },
       onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dx < -35) {
+        if (gestureState.dx < -25) {
           goToNextPage();
-        } else if (gestureState.dx > 35) {
+        } else if (gestureState.dx > 25) {
           goToPrevPage();
         }
       },
@@ -324,7 +344,12 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
             </ScrollView>
           ) : currentPageUri ? (
             /* Native Hardware-Accelerated Pager with Touch Swipe Gesture Handlers */
-            <View style={styles.pageContainer} {...panResponder.panHandlers}>
+            <View
+              style={styles.pageContainer}
+              {...panResponder.panHandlers}
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+            >
               <Image
                 key={currentPageUri}
                 source={{ uri: currentPageUri }}
@@ -353,14 +378,15 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
         {/* Bottom Fast-Navigation & Paging Bar */}
         {totalPages > 1 && (
           <View style={[styles.pagingBar, { backgroundColor: currentTheme.headerBg, borderColor: currentTheme.border }]}>
-            {/* Quick Jump -10 Pages */}
+            {/* Big Quick Jump -10 Pages */}
             <TouchableOpacity
-              style={[styles.quickJumpBtn, currentPage <= 10 && styles.quickJumpBtnDisabled]}
+              style={[styles.bigJumpBtn, currentPage <= 10 && styles.bigJumpBtnDisabled]}
               onPress={() => jumpRelative(-10)}
               disabled={currentPage <= 10}
               activeOpacity={0.7}
             >
-              <Text style={[styles.quickJumpText, currentPage <= 10 && { color: Palette.textDim }]}>-10</Text>
+              <Ionicons name="play-back" size={14} color={currentPage <= 10 ? Palette.textDim : Palette.primary} />
+              <Text style={[styles.bigJumpText, currentPage <= 10 && { color: Palette.textDim }]}>-10</Text>
             </TouchableOpacity>
 
             {/* Previous Page Button */}
@@ -400,14 +426,15 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
               <Ionicons name="chevron-forward" size={16} color={currentPage >= totalPages ? Palette.textDim : '#FFF'} />
             </TouchableOpacity>
 
-            {/* Quick Jump +10 Pages */}
+            {/* Big Quick Jump +10 Pages */}
             <TouchableOpacity
-              style={[styles.quickJumpBtn, currentPage >= totalPages - 9 && styles.quickJumpBtnDisabled]}
+              style={[styles.bigJumpBtn, currentPage >= totalPages - 9 && styles.bigJumpBtnDisabled]}
               onPress={() => jumpRelative(10)}
               disabled={currentPage >= totalPages - 9}
               activeOpacity={0.7}
             >
-              <Text style={[styles.quickJumpText, currentPage >= totalPages - 9 && { color: Palette.textDim }]}>+10</Text>
+              <Text style={[styles.bigJumpText, currentPage >= totalPages - 9 && { color: Palette.textDim }]}>+10</Text>
+              <Ionicons name="play-forward" size={14} color={currentPage >= totalPages - 9 ? Palette.textDim : Palette.primary} />
             </TouchableOpacity>
           </View>
         )}
@@ -527,7 +554,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
-    padding: 8,
+    padding: 6,
   },
   nativePageImage: {
     width: '100%',
@@ -596,33 +623,40 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
     borderTopWidth: 1,
     gap: 6,
   },
-  quickJumpBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+  bigJumpBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: 40,
+    borderRadius: 10,
+    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    gap: 4,
   },
-  quickJumpBtnDisabled: {
-    backgroundColor: 'transparent',
+  bigJumpBtnDisabled: {
+    backgroundColor: 'rgba(0, 0, 0, 0.03)',
   },
-  quickJumpText: {
+  bigJumpText: {
     color: Palette.primary,
     fontWeight: '800',
-    fontSize: 12,
+    fontSize: 14,
   },
   pageBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: Palette.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
-    gap: 3,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    minHeight: 40,
+    borderRadius: 10,
+    gap: 4,
   },
   pageBtnDisabled: {
     backgroundColor: Palette.bg,
@@ -632,23 +666,24 @@ const styles = StyleSheet.create({
   pageBtnText: {
     color: '#FFF',
     fontWeight: '700',
-    fontSize: 12,
+    fontSize: 13,
   },
   pageJumpBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.04)',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
   },
   pageCounterText: {
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: 13,
+    fontWeight: '800',
   },
   pageHighlight: {
     color: Palette.primary,
-    fontWeight: '800',
+    fontWeight: '900',
   },
   jumpModalOverlay: {
     flex: 1,
