@@ -158,7 +158,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
 
   const currentTheme = getReaderColors();
 
-  // High-performance Recycler-style virtualized PDF reader (no call stack overflow)
+  // High-performance centered PDF reader with swipe gesture support
   const pdfViewerHtml = `
     <!DOCTYPE html>
     <html>
@@ -170,28 +170,36 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
           html, body {
             width: 100%;
             height: 100%;
+            margin: 0;
+            padding: 0;
             background-color: ${themeMode === 'dark' ? '#0F172A' : '#F1F5F9'};
             color: ${themeMode === 'dark' ? '#F8FAFC' : '#0F172A'};
             display: flex;
             flex-direction: column;
             align-items: center;
             justifyContent: center;
-            overflow-x: hidden;
+            overflow: hidden;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            touch-action: pan-y pinch-zoom;
           }
           #pdf-wrapper {
+            flex: 1;
             width: 100%;
             height: 100%;
             display: flex;
             align-items: center;
             justifyContent: center;
-            padding: 6px;
+            padding: 8px;
+            box-sizing: border-box;
+            position: relative;
           }
           #pdf-canvas {
-            max-width: 100%;
-            max-height: 98vh;
+            display: block;
+            margin: auto;
+            max-width: 98vw;
+            max-height: 96vh;
             border-radius: 8px;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.18);
             background: #FFFFFF;
           }
           #status-msg {
@@ -201,6 +209,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
             color: #6366F1;
             padding: 12px;
             text-align: center;
+            z-index: 10;
           }
         </style>
       </head>
@@ -224,7 +233,6 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
             }
           }
 
-          // Safe iterative base64 decoder avoiding call stack recursion or string length overflow
           function decodeBase64ToUint8(base64) {
             var raw = atob(base64);
             var rawLen = raw.length;
@@ -235,7 +243,6 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
             return array;
           }
 
-          // Virtualized single-canvas recycler rendering
           function renderPage(num) {
             if (!pdfDoc) return;
             if (currentRenderTask) {
@@ -251,8 +258,12 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
               var ctx = canvas.getContext('2d');
 
               var unscaledViewport = page.getViewport({ scale: 1.0 });
-              var scale = (window.innerWidth - 12) / unscaledViewport.width;
-              var viewport = page.getViewport({ scale: Math.max(scale, 1.2) });
+              var availWidth = window.innerWidth - 16;
+              var availHeight = window.innerHeight - 16;
+              var scaleX = availWidth / unscaledViewport.width;
+              var scaleY = availHeight / unscaledViewport.height;
+              var fitScale = Math.min(scaleX, scaleY);
+              var viewport = page.getViewport({ scale: Math.max(fitScale, 1.2) });
 
               canvas.height = viewport.height;
               canvas.width = viewport.width;
@@ -285,6 +296,42 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
               renderPage(num);
             }
           };
+
+          // Swipe gestures for seamless page turns
+          var startX = 0;
+          var startY = 0;
+          var endX = 0;
+          var endY = 0;
+
+          document.addEventListener('touchstart', function(e) {
+            if (e.touches && e.touches.length === 1) {
+              startX = e.touches[0].screenX;
+              startY = e.touches[0].screenY;
+            }
+          }, { passive: true });
+
+          document.addEventListener('touchend', function(e) {
+            if (e.changedTouches && e.changedTouches.length === 1) {
+              endX = e.changedTouches[0].screenX;
+              endY = e.changedTouches[0].screenY;
+              var deltaX = endX - startX;
+              var deltaY = endY - startY;
+
+              if (Math.abs(deltaX) > Math.abs(deltaY) * 1.3 && Math.abs(deltaX) > 40) {
+                if (deltaX < 0) {
+                  // Swipe Left -> Next Page
+                  if (pdfDoc && currentPageNum < pdfDoc.numPages) {
+                    renderPage(currentPageNum + 1);
+                  }
+                } else {
+                  // Swipe Right -> Prev Page
+                  if (pdfDoc && currentPageNum > 1) {
+                    renderPage(currentPageNum - 1);
+                  }
+                }
+              }
+            }
+          }, { passive: true });
 
           try {
             var b64Data = "${pdfBase64 || ''}";
