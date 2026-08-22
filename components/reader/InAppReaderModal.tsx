@@ -11,6 +11,8 @@ import {
   Image,
   Dimensions,
   PanResponder,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -172,53 +174,42 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
     if (book) onUpdateProgress(book, progress);
   };
 
-  const goToNextPage = () => {
+  const navigateToPage = (targetPage: number) => {
     const total = totalPagesRef.current;
-    if (currentPage < total && pdfInfo && !isNavigatingRef.current) {
+    const clamped = Math.max(1, Math.min(total, targetPage));
+    if (clamped !== currentPage && pdfInfo && !isNavigatingRef.current) {
       isNavigatingRef.current = true;
-      const next = currentPage + 1;
-      setCurrentPage(next);
-      renderNativePage(pdfInfo.documentId, next).finally(() => {
+      setCurrentPage(clamped);
+      renderNativePage(pdfInfo.documentId, clamped).finally(() => {
         isNavigatingRef.current = false;
       });
-      if (book) onUpdateProgress(book, Math.round((next / total) * 100));
+      if (book) onUpdateProgress(book, Math.round((clamped / total) * 100));
     }
   };
 
-  const goToPrevPage = () => {
-    const total = totalPagesRef.current;
-    if (currentPage > 1 && pdfInfo && !isNavigatingRef.current) {
-      isNavigatingRef.current = true;
-      const prev = currentPage - 1;
-      setCurrentPage(prev);
-      renderNativePage(pdfInfo.documentId, prev).finally(() => {
-        isNavigatingRef.current = false;
-      });
-      if (book) onUpdateProgress(book, Math.round((prev / total) * 100));
-    }
-  };
+  const goToNextPage = () => navigateToPage(currentPage + 1);
+  const goToPrevPage = () => navigateToPage(currentPage - 1);
+  const jumpRelative = (delta: number) => navigateToPage(currentPage + delta);
 
   const handleJumpToPage = () => {
-    const total = totalPagesRef.current;
     const target = parseInt(jumpPageInput, 10);
-    if (!isNaN(target) && target >= 1 && target <= total && pdfInfo) {
-      setCurrentPage(target);
-      renderNativePage(pdfInfo.documentId, target);
-      if (book) onUpdateProgress(book, Math.round((target / total) * 100));
+    if (!isNaN(target)) {
+      navigateToPage(target);
       setIsJumpModalVisible(false);
     }
   };
 
-  // Swipe gesture detector for smooth hardware page flipping
+  // Enhanced PanResponder for responsive page-turn swipes
   const panResponder = useRef(
     PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gestureState) => {
-        return Math.abs(gestureState.dx) > 30 && Math.abs(gestureState.dy) < 60;
+        return Math.abs(gestureState.dx) > 15 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
       },
       onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dx < -50) {
+        if (gestureState.dx < -35) {
           goToNextPage();
-        } else if (gestureState.dx > 50) {
+        } else if (gestureState.dx > 35) {
           goToPrevPage();
         }
       },
@@ -332,7 +323,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
               </Text>
             </ScrollView>
           ) : currentPageUri ? (
-            /* Native Hardware-Accelerated Pager */
+            /* Native Hardware-Accelerated Pager with Touch Swipe Gesture Handlers */
             <View style={styles.pageContainer} {...panResponder.panHandlers}>
               <Image
                 key={currentPageUri}
@@ -359,9 +350,19 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
           )}
         </View>
 
-        {/* Bottom Paging Bar */}
+        {/* Bottom Fast-Navigation & Paging Bar */}
         {totalPages > 1 && (
           <View style={[styles.pagingBar, { backgroundColor: currentTheme.headerBg, borderColor: currentTheme.border }]}>
+            {/* Quick Jump -10 Pages */}
+            <TouchableOpacity
+              style={[styles.quickJumpBtn, currentPage <= 10 && styles.quickJumpBtnDisabled]}
+              onPress={() => jumpRelative(-10)}
+              disabled={currentPage <= 10}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.quickJumpText, currentPage <= 10 && { color: Palette.textDim }]}>-10</Text>
+            </TouchableOpacity>
+
             {/* Previous Page Button */}
             <TouchableOpacity
               style={[styles.pageBtn, currentPage <= 1 && styles.pageBtnDisabled]}
@@ -369,8 +370,8 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
               disabled={currentPage <= 1}
               activeOpacity={0.8}
             >
-              <Ionicons name="chevron-back" size={18} color={currentPage <= 1 ? Palette.textDim : '#FFF'} />
-              <Text style={[styles.pageBtnText, currentPage <= 1 && { color: Palette.textDim }]}>Previous</Text>
+              <Ionicons name="chevron-back" size={16} color={currentPage <= 1 ? Palette.textDim : '#FFF'} />
+              <Text style={[styles.pageBtnText, currentPage <= 1 && { color: Palette.textDim }]}>Prev</Text>
             </TouchableOpacity>
 
             {/* Page Jump Badge */}
@@ -383,7 +384,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
               activeOpacity={0.8}
             >
               <Text style={[styles.pageCounterText, { color: currentTheme.text }]}>
-                Page <Text style={styles.pageHighlight}>{currentPage}</Text> of {totalPages}
+                <Text style={styles.pageHighlight}>{currentPage}</Text> / {totalPages}
               </Text>
               <Ionicons name="search" size={12} color={Palette.primary} style={{ marginLeft: 4 }} />
             </TouchableOpacity>
@@ -396,29 +397,44 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
               activeOpacity={0.8}
             >
               <Text style={[styles.pageBtnText, currentPage >= totalPages && { color: Palette.textDim }]}>Next</Text>
-              <Ionicons name="chevron-forward" size={18} color={currentPage >= totalPages ? Palette.textDim : '#FFF'} />
+              <Ionicons name="chevron-forward" size={16} color={currentPage >= totalPages ? Palette.textDim : '#FFF'} />
+            </TouchableOpacity>
+
+            {/* Quick Jump +10 Pages */}
+            <TouchableOpacity
+              style={[styles.quickJumpBtn, currentPage >= totalPages - 9 && styles.quickJumpBtnDisabled]}
+              onPress={() => jumpRelative(10)}
+              disabled={currentPage >= totalPages - 9}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.quickJumpText, currentPage >= totalPages - 9 && { color: Palette.textDim }]}>+10</Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {/* Page Jump Modal */}
+        {/* Page Jump Modal with KeyboardAvoidingView */}
         <Modal
           visible={isJumpModalVisible}
           transparent
           animationType="fade"
           onRequestClose={() => setIsJumpModalVisible(false)}
         >
-          <View style={styles.jumpModalOverlay}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.jumpModalOverlay}
+          >
             <View style={styles.jumpModalCard}>
               <Text style={styles.jumpModalTitle}>Jump to Page</Text>
               <Text style={styles.jumpModalSub}>Enter page number between 1 and {totalPages}:</Text>
 
               <TextInput
                 style={styles.jumpInput}
-                keyboardType="numeric"
+                keyboardType="number-pad"
                 value={jumpPageInput}
                 onChangeText={setJumpPageInput}
+                onSubmitEditing={handleJumpToPage}
                 autoFocus
+                selectTextOnFocus
               />
 
               <View style={styles.jumpActions}>
@@ -434,7 +450,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
                 </TouchableOpacity>
               </View>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </Modal>
       </SafeAreaView>
     </Modal>
@@ -580,18 +596,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderTopWidth: 1,
+    gap: 6,
+  },
+  quickJumpBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+  },
+  quickJumpBtnDisabled: {
+    backgroundColor: 'transparent',
+  },
+  quickJumpText: {
+    color: Palette.primary,
+    fontWeight: '800',
+    fontSize: 12,
   },
   pageBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Palette.primary,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     borderRadius: 8,
-    gap: 4,
+    gap: 3,
   },
   pageBtnDisabled: {
     backgroundColor: Palette.bg,
@@ -601,19 +632,19 @@ const styles = StyleSheet.create({
   pageBtnText: {
     color: '#FFF',
     fontWeight: '700',
-    fontSize: 13,
+    fontSize: 12,
   },
   pageJumpBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
     backgroundColor: 'rgba(0, 0, 0, 0.04)',
   },
   pageCounterText: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
   },
   pageHighlight: {
     color: Palette.primary,
@@ -634,6 +665,11 @@ const styles = StyleSheet.create({
     padding: 20,
     borderWidth: 1,
     borderColor: Palette.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
   },
   jumpModalTitle: {
     fontSize: 18,
@@ -653,7 +689,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '800',
     color: Palette.text,
     textAlign: 'center',
