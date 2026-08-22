@@ -5,11 +5,11 @@ import {
   StyleSheet,
   TextInput,
   TouchableOpacity,
-  FlatList,
   StatusBar,
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { FlashList } from '@shopify/flash-list';
 import { Ionicons } from '@expo/vector-icons';
 import { useLibrary } from '../../context/LibraryContext';
 import { useResponsiveLayout } from '../../hooks/useResponsiveLayout';
@@ -287,16 +287,12 @@ export default function SearchScreen() {
         <StatusBar barStyle="dark-content" />
 
         {viewMode === 'list' ? (
-          <FlatList
+          <FlashList
             data={paginatedBooks}
             keyExtractor={keyExtractor}
             ListHeaderComponent={renderHeader}
             ListFooterComponent={renderFooter}
             renderItem={renderListItem}
-            initialNumToRender={16}
-            maxToRenderPerBatch={16}
-            windowSize={5}
-            removeClippedSubviews={true}
             onEndReached={handleLoadMore}
             onEndReachedThreshold={0.5}
             ListEmptyComponent={
@@ -309,9 +305,10 @@ export default function SearchScreen() {
               </View>
             }
             contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
           />
         ) : (
-          <FlatList
+          <FlashList
             key={`search_grid_${numColumns}`}
             data={paginatedBooks}
             numColumns={numColumns}
@@ -319,10 +316,6 @@ export default function SearchScreen() {
             ListHeaderComponent={renderHeader}
             ListFooterComponent={renderFooter}
             renderItem={renderGridItem}
-            initialNumToRender={16}
-            maxToRenderPerBatch={16}
-            windowSize={5}
-            removeClippedSubviews={true}
             onEndReached={handleLoadMore}
             onEndReachedThreshold={0.5}
             ListEmptyComponent={
@@ -335,6 +328,7 @@ export default function SearchScreen() {
               </View>
             }
             contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
           />
         )}
       </SafeAreaView>

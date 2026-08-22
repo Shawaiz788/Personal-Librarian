@@ -3,13 +3,13 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   ScrollView,
   StatusBar,
   TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { FlashList } from '@shopify/flash-list';
 import { Ionicons } from '@expo/vector-icons';
 import { useLibrary } from '../../context/LibraryContext';
 import { useResponsiveLayout } from '../../hooks/useResponsiveLayout';
@@ -51,7 +51,6 @@ export default function LibraryScreen() {
   const [showScanDialog, setShowScanDialog] = useState(false);
   const [displayCount, setDisplayCount] = useState(PAGE_SIZE);
 
-  // Reset pagination when search query or category filter changes
   useEffect(() => {
     setDisplayCount(PAGE_SIZE);
   }, [filter.query, filter.categoryId, filter.format]);
@@ -60,7 +59,6 @@ export default function LibraryScreen() {
     return SearchEngineService.getFormatCounts(books);
   }, [books]);
 
-  // Paginated books for grid and list views
   const paginatedBooks = useMemo(() => {
     return filteredBooks.slice(0, displayCount);
   }, [filteredBooks, displayCount]);
@@ -71,7 +69,6 @@ export default function LibraryScreen() {
     }
   }, [displayCount, filteredBooks.length]);
 
-  // Last read active book for Hero card
   const lastReadBook = useMemo(() => {
     const reading = books.filter((b) => (b.readingProgress && b.readingProgress > 0) || b.lastReadDate);
     if (reading.length > 0) {
@@ -80,7 +77,6 @@ export default function LibraryScreen() {
     return books.length > 0 ? books[0] : null;
   }, [books]);
 
-  // Dynamic shelves strictly based on the categories of books we got
   const dynamicShelves = useMemo(() => {
     return TaxonomyEngine.groupBooksByDynamicShelves(filteredBooks);
   }, [filteredBooks]);
@@ -270,8 +266,8 @@ export default function LibraryScreen() {
             ))}
           </ScrollView>
         ) : viewMode === 'grid' ? (
-          /* Paged Grid View Mode */
-          <FlatList
+          /* Recycler FlashList Grid View Mode */
+          <FlashList
             key={`grid_${numColumns}`}
             data={paginatedBooks}
             numColumns={numColumns}
@@ -279,27 +275,19 @@ export default function LibraryScreen() {
             ListHeaderComponent={renderHeroBanner}
             ListFooterComponent={renderFooter}
             renderItem={renderGridItem}
-            initialNumToRender={12}
-            maxToRenderPerBatch={12}
-            windowSize={5}
-            removeClippedSubviews={true}
             onEndReached={handleLoadMore}
             onEndReachedThreshold={0.5}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
           />
         ) : (
-          /* Paged List View Mode */
-          <FlatList
+          /* Recycler FlashList List View Mode */
+          <FlashList
             data={paginatedBooks}
             keyExtractor={keyExtractor}
             ListHeaderComponent={renderHeroBanner}
             ListFooterComponent={renderFooter}
             renderItem={renderListItem}
-            initialNumToRender={16}
-            maxToRenderPerBatch={16}
-            windowSize={5}
-            removeClippedSubviews={true}
             onEndReached={handleLoadMore}
             onEndReachedThreshold={0.5}
             contentContainerStyle={styles.denseListContent}
