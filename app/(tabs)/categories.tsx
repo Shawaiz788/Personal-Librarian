@@ -15,6 +15,7 @@ import { useRouter } from 'expo-router';
 import { useLibrary } from '../../context/LibraryContext';
 import { useResponsiveLayout } from '../../hooks/useResponsiveLayout';
 import { TabletSplitLayout } from '../../components/tablet/TabletSplitLayout';
+import { TaxonomyEngine } from '../../services/taxonomyEngine';
 import { Palette } from '../../constants/theme';
 import { Badge } from '../../components/common/Badge';
 
@@ -113,7 +114,7 @@ export default function CategoriesScreen() {
             <View style={styles.categoryGrid}>
               {categories.map((cat) => {
                 const categoryBooks = books.filter(
-                  (b) => (b.categoryId || 'general') === cat.id || b.categoryId === cat.id
+                  (b) => (b.categoryId || TaxonomyEngine.classifyBook(b.title, b.filename, b.format)) === cat.id
                 );
                 const cardWidth = catColumns === 3 ? '31.5%' : catColumns === 2 ? '48%' : '100%';
 

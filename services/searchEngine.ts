@@ -1,4 +1,5 @@
 import { BookItem, FilterState } from '../types/book';
+import { TaxonomyEngine } from './taxonomyEngine';
 
 export const SearchEngineService = {
   /**
@@ -20,9 +21,12 @@ export const SearchEngineService = {
       });
     }
 
-    // 2. Category Filter
+    // 2. Dynamic Category Filter
     if (filter.categoryId && filter.categoryId !== 'all') {
-      result = result.filter((book) => book.categoryId === filter.categoryId);
+      result = result.filter((book) => {
+        const bookCat = book.categoryId || TaxonomyEngine.classifyBook(book.title, book.filename, book.format);
+        return bookCat === filter.categoryId;
+      });
     }
 
     // 3. Format Filter
@@ -34,13 +38,13 @@ export const SearchEngineService = {
     if (filter.readingStatus && filter.readingStatus !== 'all') {
       switch (filter.readingStatus) {
         case 'unread':
-          result = result.filter((book) => book.readingProgress === 0);
+          result = result.filter((book) => (book.readingProgress || 0) === 0);
           break;
         case 'reading':
-          result = result.filter((book) => book.readingProgress > 0 && book.readingProgress < 100);
+          result = result.filter((book) => (book.readingProgress || 0) > 0 && (book.readingProgress || 0) < 100);
           break;
         case 'completed':
-          result = result.filter((book) => book.readingProgress >= 100);
+          result = result.filter((book) => (book.readingProgress || 0) >= 100);
           break;
       }
     }
@@ -88,14 +92,13 @@ export const SearchEngineService = {
   },
 
   /**
-   * Get category counts
+   * Get dynamic category counts
    */
   getCategoryCounts(books: BookItem[]): Record<string, number> {
     const counts: Record<string, number> = { all: books.length };
     for (const b of books) {
-      if (b.categoryId) {
-        counts[b.categoryId] = (counts[b.categoryId] || 0) + 1;
-      }
+      const cat = b.categoryId || TaxonomyEngine.classifyBook(b.title, b.filename, b.format);
+      counts[cat] = (counts[cat] || 0) + 1;
     }
     return counts;
   },

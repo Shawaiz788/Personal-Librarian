@@ -9,17 +9,111 @@ interface DynamicCategoryRule {
 }
 
 const CATEGORY_RULES: DynamicCategoryRule[] = [
+  // --- MEDICAL & HEALTHCARE SPECIALTIES ---
+  {
+    id: 'medicine_clinical',
+    name: 'Clinical Medicine & Diagnosis',
+    icon: 'medkit-outline',
+    color: '#0284C7',
+    keywords: [
+      'medicine', 'clinical', 'internal medicine', 'harrison', 'davidson', 'physician',
+      'oxford handbook', 'diagnosis', 'step up to medicine', 'usmle', 'plab', 'first aid',
+      'examination', 'symptom', 'treatment', 'patient', 'hospital', 'case files'
+    ],
+  },
+  {
+    id: 'anatomy_physio',
+    name: 'Anatomy & Physiology',
+    icon: 'body-outline',
+    color: '#E11D48',
+    keywords: [
+      'anatomy', 'physiology', 'netter', "gray's", 'grays', 'guyton', 'hall', 'snell',
+      'moore', 'embryology', 'histology', 'neuroanatomy', 'chaurasia', 'ganong', 'atlas',
+      'human body', 'dissection', 'gross anatomy', 'organ'
+    ],
+  },
+  {
+    id: 'pharmacology',
+    name: 'Pharmacology & Drugs',
+    icon: 'flask-outline',
+    color: '#059669',
+    keywords: [
+      'pharmacology', 'pharma', 'drug', 'katzung', 'rang', 'dale', 'goodman', 'gilman',
+      'tripathi', 'lippincott pharmacology', 'dosage', 'therapeutics', 'toxicology', 'prescription',
+      'antibiotic', 'medication', 'pharmacy'
+    ],
+  },
+  {
+    id: 'pathology_micro',
+    name: 'Pathology & Microbiology',
+    icon: 'git-network-outline',
+    color: '#7C3AED',
+    keywords: [
+      'pathology', 'microbiology', 'robbins', 'cotran', 'pathoma', 'jawetz', 'levinson',
+      'immunology', 'parasitology', 'virology', 'hematology', 'histopathology', 'bacteria',
+      'infection', 'infectious', 'disease', 'cellular'
+    ],
+  },
+  {
+    id: 'surgery_emergency',
+    name: 'Surgery & Emergency',
+    icon: 'cut-outline',
+    color: '#DC2626',
+    keywords: [
+      'surgery', 'surgical', 'orthopedic', 'orthopaedics', 'bailey', 'love', 'schwartz',
+      'sabiston', 'trauma', 'operative', 'anesthesia', 'anesthesiology', 'suture', 'emergency',
+      'critical care', 'icu', 'resuscitation', 'wound'
+    ],
+  },
+  {
+    id: 'pediatrics_obgyn',
+    name: 'Pediatrics, OB/GYN',
+    icon: 'heart-half-outline',
+    color: '#DB2777',
+    keywords: [
+      'pediatric', 'pediatrics', 'paediatrics', 'nelson', 'gynecology', 'obstetrics',
+      'gynaecology', 'williams', 'dutta', 'child health', 'neonatology', 'infant',
+      'pregnancy', 'maternal', 'embryo'
+    ],
+  },
+  {
+    id: 'specialties_cardio_neuro',
+    name: 'Specialties (Cardio, Neuro, Radio)',
+    icon: 'pulse-outline',
+    color: '#EA580C',
+    keywords: [
+      'cardiology', 'cardiovascular', 'ecg', 'ekg', 'heart', 'neurology', 'neurosurgery',
+      'brain', 'dermatology', 'skin', 'radiology', 'ct scan', 'mri', 'x-ray', 'ultrasound',
+      'ophthalmology', 'eye', 'ent', 'otolaryngology', 'psychiatry', 'nephrology', 'kidney',
+      'pulmonology', 'lung', 'gastroenterology', 'endocrinology', 'oncology', 'cancer'
+    ],
+  },
+  {
+    id: 'nursing_public_health',
+    name: 'Nursing & Public Health',
+    icon: 'fitness-outline',
+    color: '#0D9488',
+    keywords: [
+      'nursing', 'public health', 'epidemiology', 'park', 'community medicine',
+      'forensic', 'medical ethics', 'patient care', 'nutrition', 'hygiene', 'health'
+    ],
+  },
+
+  // --- COMPUTER SCIENCE & ENGINEERING ---
   {
     id: 'programming',
     name: 'Programming & Tech',
     icon: 'code-slash',
-    color: '#6366F1',
+    color: '#4F46E5',
     keywords: [
       'javascript', 'python', 'react', 'code', 'algorithm', 'programming', 'web', 'software',
       'git', 'dev', 'css', 'html', 'sql', 'api', 'node', 'typescript', 'rust', 'java',
-      'c++', 'linux', 'data structure', 'backend', 'frontend', 'database', 'docker', 'cloud', 'aws', 'kubernetes'
+      'c++', 'linux', 'data structure', 'backend', 'frontend', 'database', 'docker', 'cloud',
+      'aws', 'kubernetes', 'full stack', 'developer'
     ],
   },
+
+  // --- SCIENCE & MATHEMATICS ---
   {
     id: 'science_math',
     name: 'Science & Mathematics',
@@ -27,19 +121,24 @@ const CATEGORY_RULES: DynamicCategoryRule[] = [
     color: '#06B6D4',
     keywords: [
       'physics', 'math', 'calculus', 'linear algebra', 'quantum', 'biology', 'chemistry',
-      'astronomy', 'science', 'statistics', 'geometry', 'algebra', 'neural', 'machine learning', 'ai', 'deep learning'
+      'astronomy', 'science', 'statistics', 'geometry', 'algebra', 'neural network',
+      'machine learning', 'ai', 'deep learning', 'data science'
     ],
   },
+
+  // --- FICTION & LITERATURE ---
   {
     id: 'fiction',
     name: 'Fiction & Literature',
     icon: 'book-outline',
     color: '#EC4899',
     keywords: [
-      'novel', 'story', 'chronicles', 'tales', 'fiction', 'potter', 'ring', 'game', 'dune',
-      'fantasy', 'mystery', 'thriller', 'adventures', 'dracula', 'sherlock', 'pride', 'prejudice'
+      'novel', 'story', 'chronicles', 'tales', 'fiction', 'potter', 'ring', 'game of thrones',
+      'dune', 'fantasy', 'mystery', 'thriller', 'adventures', 'dracula', 'sherlock', 'pride', 'prejudice'
     ],
   },
+
+  // --- BUSINESS & FINANCE ---
   {
     id: 'business',
     name: 'Business & Finance',
@@ -47,9 +146,11 @@ const CATEGORY_RULES: DynamicCategoryRule[] = [
     color: '#F59E0B',
     keywords: [
       'business', 'finance', 'invest', 'startup', 'money', 'economics', 'marketing',
-      'management', 'wealth', 'crypto', 'leadership', 'entrepreneur', 'sales', 'strategy'
+      'management', 'wealth', 'crypto', 'leadership', 'entrepreneur', 'sales', 'strategy', 'accounting'
     ],
   },
+
+  // --- COMICS & GRAPHIC NOVELS ---
   {
     id: 'comics',
     name: 'Comics & Graphic Novels',
@@ -57,6 +158,8 @@ const CATEGORY_RULES: DynamicCategoryRule[] = [
     color: '#8B5CF6',
     keywords: ['manga', 'comic', 'cbr', 'cbz', 'marvel', 'dc', 'batman', 'superman', 'anime', 'artbook'],
   },
+
+  // --- GUIDES & MANUALS ---
   {
     id: 'guides',
     name: 'Guides & Manuals',
@@ -64,6 +167,8 @@ const CATEGORY_RULES: DynamicCategoryRule[] = [
     color: '#10B981',
     keywords: ['cheat', 'guide', 'handbook', 'manual', 'tutorial', 'cookbook', 'cheatsheet', 'reference', 'documentation'],
   },
+
+  // --- RESEARCH PAPERS ---
   {
     id: 'academic',
     name: 'Research & Papers',
@@ -75,12 +180,11 @@ const CATEGORY_RULES: DynamicCategoryRule[] = [
 
 export const TaxonomyEngine = {
   /**
-   * Intelligently classifies a book into a category based on its title, filename, format, and path
+   * Intelligently classifies a book into a category based on title, filename, format, and path
    */
   classifyBook(title: string, filename: string, format: string): string {
     const textToMatch = `${title} ${filename}`.toLowerCase();
 
-    // Check comics format
     if (format === 'cbr' || format === 'cbz') {
       return 'comics';
     }
@@ -98,13 +202,13 @@ export const TaxonomyEngine = {
 
   /**
    * Computes dynamic categories strictly from the books currently loaded in the library.
-   * If a category has 0 books, it is NOT shown.
+   * If a category has 0 books, it is NOT returned!
    */
   computeDynamicCategories(books: BookItem[]): Category[] {
     const categoryBookCountMap = new Map<string, number>();
 
     books.forEach((book) => {
-      const catId = book.categoryId || this.classifyBook(book.title, book.filename, book.format);
+      const catId = this.classifyBook(book.title, book.filename, book.format);
       categoryBookCountMap.set(catId, (categoryBookCountMap.get(catId) || 0) + 1);
     });
 
@@ -118,7 +222,7 @@ export const TaxonomyEngine = {
           name: rule.name,
           icon: rule.icon,
           color: rule.color,
-          description: `${count} ${count === 1 ? 'document' : 'documents'} found`,
+          description: `${count} ${count === 1 ? 'book' : 'books'} found`,
           isSystem: true,
         });
       }
@@ -128,10 +232,10 @@ export const TaxonomyEngine = {
     if (generalCount > 0) {
       dynamicCategories.push({
         id: 'general',
-        name: 'General & Miscellaneous',
+        name: 'General Medical & Other Books',
         icon: 'folder-open-outline',
         color: '#64748B',
-        description: `${generalCount} ${generalCount === 1 ? 'document' : 'documents'} found`,
+        description: `${generalCount} ${generalCount === 1 ? 'book' : 'books'} found`,
         isSystem: true,
       });
     }
@@ -140,13 +244,13 @@ export const TaxonomyEngine = {
   },
 
   /**
-   * Groups books into dynamic shelves for the Library Hub
+   * Groups books into dynamic shelves strictly for categories that contain actual books.
    */
   groupBooksByDynamicShelves(books: BookItem[]): { id: string; title: string; color: string; icon: string; books: BookItem[] }[] {
     const groups: { [key: string]: BookItem[] } = {};
 
     books.forEach((book) => {
-      const catId = book.categoryId || this.classifyBook(book.title, book.filename, book.format);
+      const catId = this.classifyBook(book.title, book.filename, book.format);
       if (!groups[catId]) {
         groups[catId] = [];
       }
@@ -170,7 +274,7 @@ export const TaxonomyEngine = {
     if (groups['general'] && groups['general'].length > 0) {
       shelves.push({
         id: 'general',
-        title: 'General & Miscellaneous',
+        title: 'General & Other Documents',
         color: '#64748B',
         icon: 'folder-open-outline',
         books: groups['general'],
