@@ -46,6 +46,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
   const [isJumpModalVisible, setIsJumpModalVisible] = useState(false);
   const [jumpPageInput, setJumpPageInput] = useState('1');
 
+  const totalPagesRef = useRef(1);
   const layoutRef = useRef({
     width: Dimensions.get('window').width,
     height: Dimensions.get('window').height,
@@ -54,61 +55,57 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
   const activeDocIdRef = useRef<string | null>(null);
   const isNavigatingRef = useRef(false);
 
-  // Render a specific page via native Android PdfRenderer
-  const renderNativePage = useCallback(
-    async (docId: string, pageNum: number) => {
-      try {
-        setPageLoading(true);
-        const pageIndex = Math.max(0, pageNum - 1);
-        const { width, height } = layoutRef.current;
-        const rendered = await NativePdfRendererService.renderPage(
+  // Stable page renderer - does NOT change identity when totalPages changes
+  const renderNativePage = useCallback(async (docId: string, pageNum: number) => {
+    try {
+      setPageLoading(true);
+      const pageIndex = Math.max(0, pageNum - 1);
+      const { width, height } = layoutRef.current;
+      const rendered = await NativePdfRendererService.renderPage(
+        docId,
+        pageIndex,
+        Math.round(width * 1.5),
+        Math.round(height * 1.5)
+      );
+      setCurrentPageUri(rendered.uri);
+
+      // Preload next page into native LRU cache in background
+      if (pageNum < totalPagesRef.current && NativePdfRendererService.isAvailable()) {
+        NativePdfRendererService.renderPage(
           docId,
-          pageIndex,
+          pageNum,
           Math.round(width * 1.5),
           Math.round(height * 1.5)
-        );
-        setCurrentPageUri(rendered.uri);
-
-        // Preload next page into native LRU cache in background
-        if (pageNum < totalPages && NativePdfRendererService.isAvailable()) {
-          NativePdfRendererService.renderPage(
-            docId,
-            pageNum,
-            Math.round(width * 1.5),
-            Math.round(height * 1.5)
-          ).catch(() => {});
-        }
-      } catch (err) {
-        console.warn('Native renderPage error:', err);
-      } finally {
-        setPageLoading(false);
+        ).catch(() => {});
       }
-    },
-    [totalPages]
-  );
+    } catch (err) {
+      console.warn('Native renderPage error:', err);
+    } finally {
+      setPageLoading(false);
+    }
+  }, []);
 
-  // Load document lifecycle - strictly triggered ONLY when book or visible changes
+  // Single stable document lifecycle hook - strictly triggered ONLY when book or visible changes
   useEffect(() => {
     if (!book || !visible) return;
 
-    let isMounted = true;
+    let isCancelled = false;
     setLoading(true);
     setPdfInfo(null);
     setCurrentPageUri(null);
     setTextContent(null);
     setCurrentPage(1);
     setTotalPages(1);
+    totalPagesRef.current = 1;
 
     const loadDocument = async () => {
       try {
-        if (!book) return;
-
         if (book.format === 'txt' || book.format === 'docx') {
           try {
             const content = await FileScannerService.readFileContent(book, 'utf8');
-            if (isMounted) setTextContent(content);
+            if (!isCancelled) setTextContent(content);
           } catch {
-            if (isMounted) {
+            if (!isCancelled) {
               setTextContent(
                 `Document: ${book.title}\nFilename: ${book.filename}\nAuthor: ${book.author}\n\nReading progress saved.`
               );
@@ -119,13 +116,14 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
           const localUri = await FileScannerService.ensureLocalFileUri(book);
           const info = await NativePdfRendererService.openDocument(localUri);
 
-          if (!isMounted) {
+          if (isCancelled) {
             NativePdfRendererService.closeDocument(info.documentId).catch(() => {});
             return;
           }
 
           setPdfInfo(info);
           setTotalPages(info.pageCount);
+          totalPagesRef.current = info.pageCount;
           activeDocIdRef.current = info.documentId;
 
           // Initial start page based on reading progress
@@ -142,14 +140,14 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
       } catch (err) {
         console.error('Error opening document:', err);
       } finally {
-        if (isMounted) setLoading(false);
+        if (!isCancelled) setLoading(false);
       }
     };
 
     loadDocument();
 
     return () => {
-      isMounted = false;
+      isCancelled = true;
       if (activeDocIdRef.current) {
         const idToClose = activeDocIdRef.current;
         activeDocIdRef.current = null;
@@ -163,7 +161,8 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
   };
 
   const handleClose = () => {
-    const progress = totalPages > 0 ? Math.round((currentPage / totalPages) * 100) : (book?.readingProgress || 0);
+    const total = totalPagesRef.current;
+    const progress = total > 0 ? Math.round((currentPage / total) * 100) : (book?.readingProgress || 0);
     onClose();
     if (activeDocIdRef.current) {
       const idToClose = activeDocIdRef.current;
@@ -174,18 +173,20 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
   };
 
   const goToNextPage = () => {
-    if (currentPage < totalPages && pdfInfo && !isNavigatingRef.current) {
+    const total = totalPagesRef.current;
+    if (currentPage < total && pdfInfo && !isNavigatingRef.current) {
       isNavigatingRef.current = true;
       const next = currentPage + 1;
       setCurrentPage(next);
       renderNativePage(pdfInfo.documentId, next).finally(() => {
         isNavigatingRef.current = false;
       });
-      if (book) onUpdateProgress(book, Math.round((next / totalPages) * 100));
+      if (book) onUpdateProgress(book, Math.round((next / total) * 100));
     }
   };
 
   const goToPrevPage = () => {
+    const total = totalPagesRef.current;
     if (currentPage > 1 && pdfInfo && !isNavigatingRef.current) {
       isNavigatingRef.current = true;
       const prev = currentPage - 1;
@@ -193,16 +194,17 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
       renderNativePage(pdfInfo.documentId, prev).finally(() => {
         isNavigatingRef.current = false;
       });
-      if (book) onUpdateProgress(book, Math.round((prev / totalPages) * 100));
+      if (book) onUpdateProgress(book, Math.round((prev / total) * 100));
     }
   };
 
   const handleJumpToPage = () => {
+    const total = totalPagesRef.current;
     const target = parseInt(jumpPageInput, 10);
-    if (!isNaN(target) && target >= 1 && target <= totalPages && pdfInfo) {
+    if (!isNaN(target) && target >= 1 && target <= total && pdfInfo) {
       setCurrentPage(target);
       renderNativePage(pdfInfo.documentId, target);
-      if (book) onUpdateProgress(book, Math.round((target / totalPages) * 100));
+      if (book) onUpdateProgress(book, Math.round((target / total) * 100));
       setIsJumpModalVisible(false);
     }
   };
