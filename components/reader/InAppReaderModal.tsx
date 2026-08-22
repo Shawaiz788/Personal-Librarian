@@ -45,7 +45,8 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
   const [totalPages, setTotalPages] = useState(1);
   const [isJumpModalVisible, setIsJumpModalVisible] = useState(false);
   const [jumpPageInput, setJumpPageInput] = useState('1');
-  const [viewLayout, setViewLayout] = useState({
+
+  const layoutRef = useRef({
     width: Dimensions.get('window').width,
     height: Dimensions.get('window').height,
   });
@@ -55,10 +56,11 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
 
   // Render a specific page via native Android PdfRenderer
   const renderNativePage = useCallback(
-    async (docId: string, pageNum: number, width: number, height: number) => {
+    async (docId: string, pageNum: number) => {
       try {
         setPageLoading(true);
         const pageIndex = Math.max(0, pageNum - 1);
+        const { width, height } = layoutRef.current;
         const rendered = await NativePdfRendererService.renderPage(
           docId,
           pageIndex,
@@ -85,10 +87,11 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
     [totalPages]
   );
 
-  // Load document lifecycle
+  // Load document lifecycle - strictly triggered ONLY when book or visible changes
   useEffect(() => {
     if (!book || !visible) return;
 
+    let isMounted = true;
     setLoading(true);
     setPdfInfo(null);
     setCurrentPageUri(null);
@@ -98,19 +101,28 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
 
     const loadDocument = async () => {
       try {
+        if (!book) return;
+
         if (book.format === 'txt' || book.format === 'docx') {
           try {
             const content = await FileScannerService.readFileContent(book, 'utf8');
-            setTextContent(content);
+            if (isMounted) setTextContent(content);
           } catch {
-            setTextContent(
-              `Document: ${book.title}\nFilename: ${book.filename}\nAuthor: ${book.author}\n\nReading progress saved.`
-            );
+            if (isMounted) {
+              setTextContent(
+                `Document: ${book.title}\nFilename: ${book.filename}\nAuthor: ${book.author}\n\nReading progress saved.`
+              );
+            }
           }
         } else if (NativePdfRendererService.isAvailable()) {
           // Native Android PdfRenderer API
           const localUri = await FileScannerService.ensureLocalFileUri(book);
           const info = await NativePdfRendererService.openDocument(localUri);
+
+          if (!isMounted) {
+            NativePdfRendererService.closeDocument(info.documentId).catch(() => {});
+            return;
+          }
 
           setPdfInfo(info);
           setTotalPages(info.pageCount);
@@ -123,27 +135,28 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
           }
           setCurrentPage(startPage);
 
-          await renderNativePage(info.documentId, startPage, viewLayout.width, viewLayout.height);
+          await renderNativePage(info.documentId, startPage);
         } else {
-          // Fallback
           console.warn('Native PDF Renderer not available on this platform.');
         }
       } catch (err) {
         console.error('Error opening document:', err);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
     loadDocument();
 
     return () => {
+      isMounted = false;
       if (activeDocIdRef.current) {
-        NativePdfRendererService.closeDocument(activeDocIdRef.current).catch(() => {});
+        const idToClose = activeDocIdRef.current;
         activeDocIdRef.current = null;
+        NativePdfRendererService.closeDocument(idToClose).catch(() => {});
       }
     };
-  }, [book, visible, renderNativePage, viewLayout.width, viewLayout.height]);
+  }, [book, visible, renderNativePage]);
 
   const handleShare = () => {
     if (book) FileScannerService.shareDocumentSafely(book);
@@ -153,8 +166,9 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
     const progress = totalPages > 0 ? Math.round((currentPage / totalPages) * 100) : (book?.readingProgress || 0);
     onClose();
     if (activeDocIdRef.current) {
-      NativePdfRendererService.closeDocument(activeDocIdRef.current).catch(() => {});
+      const idToClose = activeDocIdRef.current;
       activeDocIdRef.current = null;
+      NativePdfRendererService.closeDocument(idToClose).catch(() => {});
     }
     if (book) onUpdateProgress(book, progress);
   };
@@ -164,7 +178,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
       isNavigatingRef.current = true;
       const next = currentPage + 1;
       setCurrentPage(next);
-      renderNativePage(pdfInfo.documentId, next, viewLayout.width, viewLayout.height).finally(() => {
+      renderNativePage(pdfInfo.documentId, next).finally(() => {
         isNavigatingRef.current = false;
       });
       if (book) onUpdateProgress(book, Math.round((next / totalPages) * 100));
@@ -176,7 +190,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
       isNavigatingRef.current = true;
       const prev = currentPage - 1;
       setCurrentPage(prev);
-      renderNativePage(pdfInfo.documentId, prev, viewLayout.width, viewLayout.height).finally(() => {
+      renderNativePage(pdfInfo.documentId, prev).finally(() => {
         isNavigatingRef.current = false;
       });
       if (book) onUpdateProgress(book, Math.round((prev / totalPages) * 100));
@@ -187,7 +201,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
     const target = parseInt(jumpPageInput, 10);
     if (!isNaN(target) && target >= 1 && target <= totalPages && pdfInfo) {
       setCurrentPage(target);
-      renderNativePage(pdfInfo.documentId, target, viewLayout.width, viewLayout.height);
+      renderNativePage(pdfInfo.documentId, target);
       if (book) onUpdateProgress(book, Math.round((target / totalPages) * 100));
       setIsJumpModalVisible(false);
     }
@@ -222,7 +236,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
 
   const currentTheme = getReaderColors();
 
-  if (!book) return null;
+  if (!book || !visible) return null;
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={handleClose}>
@@ -286,7 +300,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
           onLayout={(e) => {
             const { width, height } = e.nativeEvent.layout;
             if (width > 0 && height > 0) {
-              setViewLayout({ width, height });
+              layoutRef.current = { width, height };
             }
           }}
         >
