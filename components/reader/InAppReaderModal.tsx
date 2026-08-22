@@ -66,7 +66,9 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
             const content = await FileScannerService.readFileContent(book, 'utf8');
             setTextContent(content);
           } catch {
-            setTextContent(`Document: ${book.title}\nFilename: ${book.filename}\nAuthor: ${book.author}\n\nReading progress saved.`);
+            setTextContent(
+              `Document: ${book.title}\nFilename: ${book.filename}\nAuthor: ${book.author}\n\nReading progress saved.`
+            );
           }
         } else {
           try {
@@ -98,13 +100,12 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
     onUpdateProgress(book, progress);
   };
 
-  // Paging actions sent to WebView
+  // Paging actions
   const goToNextPage = () => {
     if (currentPage < totalPages) {
       const next = currentPage + 1;
       setCurrentPage(next);
-      webViewRef.current?.injectJavaScript(`window.renderPdfPage(${next}); true;`);
-      onUpdateProgress(book, Math.round((next / totalPages) * 100));
+      webViewRef.current?.injectJavaScript(`window.goToPage(${next}); true;`);
     }
   };
 
@@ -112,8 +113,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
     if (currentPage > 1) {
       const prev = currentPage - 1;
       setCurrentPage(prev);
-      webViewRef.current?.injectJavaScript(`window.renderPdfPage(${prev}); true;`);
-      onUpdateProgress(book, Math.round((prev / totalPages) * 100));
+      webViewRef.current?.injectJavaScript(`window.goToPage(${prev}); true;`);
     }
   };
 
@@ -121,8 +121,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
     const target = parseInt(jumpPageInput, 10);
     if (!isNaN(target) && target >= 1 && target <= totalPages) {
       setCurrentPage(target);
-      webViewRef.current?.injectJavaScript(`window.renderPdfPage(${target}); true;`);
-      onUpdateProgress(book, Math.round((target / totalPages) * 100));
+      webViewRef.current?.injectJavaScript(`window.goToPage(${target}); true;`);
       setIsJumpModalVisible(false);
     }
   };
@@ -132,11 +131,10 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
       const data = JSON.parse(event.nativeEvent.data);
       if (data.type === 'TOTAL_PAGES') {
         setTotalPages(data.count);
-        // If book has existing progress, calculate starting page
         if (book.readingProgress && book.readingProgress > 0) {
           const startPage = Math.max(1, Math.min(data.count, Math.round((book.readingProgress / 100) * data.count)));
           setCurrentPage(startPage);
-          webViewRef.current?.injectJavaScript(`window.renderPdfPage(${startPage}); true;`);
+          webViewRef.current?.injectJavaScript(`window.goToPage(${startPage}); true;`);
         }
       } else if (data.type === 'PAGE_CHANGED') {
         setCurrentPage(data.page);
@@ -160,7 +158,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
 
   const currentTheme = getReaderColors();
 
-  // High-performance virtualized single/paged PDF.js reader
+  // High-performance Recycler-style virtualized PDF reader (no call stack overflow)
   const pdfViewerHtml = `
     <!DOCTYPE html>
     <html>
@@ -187,7 +185,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
             display: flex;
             align-items: center;
             justifyContent: center;
-            padding: 8px;
+            padding: 6px;
           }
           #pdf-canvas {
             max-width: 100%;
@@ -196,92 +194,114 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
             box-shadow: 0 4px 16px rgba(0,0,0,0.18);
             background: #FFFFFF;
           }
-          #status-overlay {
+          #status-msg {
             position: absolute;
             font-size: 14px;
             font-weight: 700;
             color: #6366F1;
+            padding: 12px;
+            text-align: center;
           }
         </style>
       </head>
       <body>
-        <div id="status-overlay">Loading PDF Document...</div>
+        <div id="status-msg">Loading Document...</div>
         <div id="pdf-wrapper">
           <canvas id="pdf-canvas"></canvas>
         </div>
 
         <script>
-          const pdfData = "${pdfBase64 || ''}";
           pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-          let pdfDoc = null;
-          let pageRendering = false;
-          let pageNumPending = null;
+          var pdfDoc = null;
+          var currentPageNum = 1;
+          var currentRenderTask = null;
+          var isRendering = false;
 
-          function sendToReactNative(obj) {
+          function sendMsg(data) {
             if (window.ReactNativeWebView) {
-              window.ReactNativeWebView.postMessage(JSON.stringify(obj));
+              window.ReactNativeWebView.postMessage(JSON.stringify(data));
             }
           }
 
-          async function renderPdfPage(num) {
+          // Safe iterative base64 decoder avoiding call stack recursion or string length overflow
+          function decodeBase64ToUint8(base64) {
+            var raw = atob(base64);
+            var rawLen = raw.length;
+            var array = new Uint8Array(new ArrayBuffer(rawLen));
+            for (var i = 0; i < rawLen; i++) {
+              array[i] = raw.charCodeAt(i);
+            }
+            return array;
+          }
+
+          // Virtualized single-canvas recycler rendering
+          function renderPage(num) {
             if (!pdfDoc) return;
-            pageRendering = true;
+            if (currentRenderTask) {
+              try {
+                currentRenderTask.cancel();
+              } catch (e) {}
+            }
+            isRendering = true;
+            currentPageNum = num;
 
-            try {
-              const page = await pdfDoc.getPage(num);
-              const canvas = document.getElementById('pdf-canvas');
-              const ctx = canvas.getContext('2d');
+            pdfDoc.getPage(num).then(function(page) {
+              var canvas = document.getElementById('pdf-canvas');
+              var ctx = canvas.getContext('2d');
 
-              // Responsive scale based on viewport width
-              const unscaledViewport = page.getViewport({ scale: 1 });
-              const scale = (window.innerWidth - 16) / unscaledViewport.width;
-              const viewport = page.getViewport({ scale: Math.max(scale, 1.2) });
+              var unscaledViewport = page.getViewport({ scale: 1.0 });
+              var scale = (window.innerWidth - 12) / unscaledViewport.width;
+              var viewport = page.getViewport({ scale: Math.max(scale, 1.2) });
 
               canvas.height = viewport.height;
               canvas.width = viewport.width;
 
-              const renderContext = {
+              var renderContext = {
                 canvasContext: ctx,
                 viewport: viewport
               };
 
-              await page.render(renderContext).promise;
-              document.getElementById('status-overlay').style.display = 'none';
-              pageRendering = false;
-
-              if (pageNumPending !== null) {
-                renderPdfPage(pageNumPending);
-                pageNumPending = null;
-              }
-            } catch (err) {
-              pageRendering = false;
-              console.error('Page render error:', err);
-            }
+              currentRenderTask = page.render(renderContext);
+              currentRenderTask.promise.then(function() {
+                isRendering = false;
+                document.getElementById('status-msg').style.display = 'none';
+                page.cleanup();
+                sendMsg({ type: 'PAGE_CHANGED', page: num });
+              }).catch(function(err) {
+                if (err && err.name !== 'RenderingCancelledException') {
+                  console.error('Render error:', err);
+                }
+                isRendering = false;
+              });
+            }).catch(function(err) {
+              isRendering = false;
+              console.error('GetPage error:', err);
+            });
           }
 
-          window.renderPdfPage = function(num) {
-            if (pageRendering) {
-              pageNumPending = num;
-            } else {
-              renderPdfPage(num);
+          window.goToPage = function(num) {
+            if (pdfDoc && num >= 1 && num <= pdfDoc.numPages) {
+              renderPage(num);
             }
           };
 
-          if (pdfData) {
-            const rawData = atob(pdfData);
-            const uint8Array = new Uint8Array(rawData.length);
-            for (let i = 0; i < rawData.length; i++) {
-              uint8Array[i] = rawData.charCodeAt(i);
+          try {
+            var b64Data = "${pdfBase64 || ''}";
+            if (b64Data && b64Data.length > 0) {
+              var typedArray = decodeBase64ToUint8(b64Data);
+              pdfjsLib.getDocument({ data: typedArray, cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/', cMapPacked: true }).promise.then(function(pdf) {
+                pdfDoc = pdf;
+                sendMsg({ type: 'TOTAL_PAGES', count: pdf.numPages });
+                renderPage(1);
+              }).catch(function(err) {
+                document.getElementById('status-msg').innerText = 'Failed to load PDF: ' + err.message;
+              });
+            } else {
+              document.getElementById('status-msg').innerText = 'Ready for reading.';
             }
-
-            pdfjsLib.getDocument({ data: uint8Array }).promise.then((pdf) => {
-              pdfDoc = pdf;
-              sendToReactNative({ type: 'TOTAL_PAGES', count: pdf.numPages });
-              renderPdfPage(1);
-            }).catch(err => {
-              document.getElementById('status-overlay').innerText = 'Failed to load PDF: ' + err.message;
-            });
+          } catch (e) {
+            document.getElementById('status-msg').innerText = 'Error initializing reader: ' + e.message;
           }
         </script>
       </body>
@@ -396,7 +416,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
           )}
         </View>
 
-        {/* Interactive Bottom Paging Bar */}
+        {/* Recycler-Style Bottom Navigation Bar */}
         {pdfBase64 && totalPages > 1 && (
           <View style={[styles.pagingBar, { backgroundColor: currentTheme.headerBg, borderColor: currentTheme.border }]}>
             {/* Previous Page Button */}
@@ -404,18 +424,20 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
               style={[styles.pageBtn, currentPage <= 1 && styles.pageBtnDisabled]}
               onPress={goToPrevPage}
               disabled={currentPage <= 1}
+              activeOpacity={0.8}
             >
               <Ionicons name="chevron-back" size={18} color={currentPage <= 1 ? Palette.textDim : '#FFF'} />
               <Text style={[styles.pageBtnText, currentPage <= 1 && { color: Palette.textDim }]}>Previous</Text>
             </TouchableOpacity>
 
-            {/* Page Counter & Direct Jump */}
+            {/* Page Jump Badge */}
             <TouchableOpacity
               style={styles.pageJumpBadge}
               onPress={() => {
                 setJumpPageInput(String(currentPage));
                 setIsJumpModalVisible(true);
               }}
+              activeOpacity={0.8}
             >
               <Text style={[styles.pageCounterText, { color: currentTheme.text }]}>
                 Page <Text style={styles.pageHighlight}>{currentPage}</Text> of {totalPages}
@@ -428,6 +450,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
               style={[styles.pageBtn, currentPage >= totalPages && styles.pageBtnDisabled]}
               onPress={goToNextPage}
               disabled={currentPage >= totalPages}
+              activeOpacity={0.8}
             >
               <Text style={[styles.pageBtnText, currentPage >= totalPages && { color: Palette.textDim }]}>Next</Text>
               <Ionicons name="chevron-forward" size={18} color={currentPage >= totalPages ? Palette.textDim : '#FFF'} />
