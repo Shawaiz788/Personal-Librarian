@@ -18,12 +18,16 @@ interface LibraryContextType {
   filter: FilterState;
   viewMode: ViewMode;
   selectedBook: BookItem | null;
+  readingBook: BookItem | null;
   isLoading: boolean;
   isScanning: boolean;
   scanProgress: ScanProgressInfo;
   setFilter: React.Dispatch<React.SetStateAction<FilterState>>;
   setViewMode: (mode: ViewMode) => void;
   setSelectedBook: (book: BookItem | null) => void;
+  openBookInReader: (book: BookItem) => void;
+  closeReader: () => void;
+  updateReadingProgress: (book: BookItem, progress: number) => Promise<void>;
   scanDevice: (forceNewLocation?: boolean) => Promise<number>;
   importDocuments: () => Promise<number>;
   updateBook: (book: BookItem) => Promise<void>;
@@ -52,6 +56,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [filter, setFilter] = useState<FilterState>(defaultFilter);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [selectedBook, setSelectedBook] = useState<BookItem | null>(null);
+  const [readingBook, setReadingBook] = useState<BookItem | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState<ScanProgressInfo>({
@@ -129,6 +134,9 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (selectedBook?.id === book.id) {
       setSelectedBook(book);
     }
+    if (readingBook?.id === book.id) {
+      setReadingBook(book);
+    }
   };
 
   const deleteBook = async (bookId: string) => {
@@ -137,6 +145,28 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (selectedBook?.id === bookId) {
       setSelectedBook(null);
     }
+    if (readingBook?.id === bookId) {
+      setReadingBook(null);
+    }
+  };
+
+  const openBookInReader = (book: BookItem) => {
+    const updated: BookItem = { ...book, lastReadDate: Date.now() };
+    updateBook(updated);
+    setReadingBook(updated);
+  };
+
+  const closeReader = () => {
+    setReadingBook(null);
+  };
+
+  const updateReadingProgress = async (book: BookItem, progress: number) => {
+    const updated: BookItem = {
+      ...book,
+      readingProgress: progress,
+      lastReadDate: Date.now(),
+    };
+    await updateBook(updated);
   };
 
   const createCategory = async (name: string, color: string, icon: string) => {
@@ -182,10 +212,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const openBookFile = async (book: BookItem) => {
-    await FileScannerService.openDocument(book);
-    // update last read date
-    const updated: BookItem = { ...book, lastReadDate: Date.now() };
-    await updateBook(updated);
+    openBookInReader(book);
   };
 
   return (
@@ -198,12 +225,16 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         filter,
         viewMode,
         selectedBook,
+        readingBook,
         isLoading,
         isScanning,
         scanProgress,
         setFilter,
         setViewMode,
         setSelectedBook,
+        openBookInReader,
+        closeReader,
+        updateReadingProgress,
         scanDevice,
         importDocuments,
         updateBook,

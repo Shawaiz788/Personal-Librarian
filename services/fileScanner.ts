@@ -56,10 +56,8 @@ export function getFormatFromExtension(filename: string): BookFormat {
  * Smartly parse title and author from filename
  */
 export function parseBookTitleAndAuthor(filename: string): { title: string; author: string } {
-  // Strip extension
   const base = filename.replace(/\.[^/.]+$/, '').trim();
 
-  // Pattern: "Author - Title" or "Author _ Title"
   if (base.includes(' - ')) {
     const parts = base.split(' - ');
     if (parts.length >= 2) {
@@ -67,13 +65,11 @@ export function parseBookTitleAndAuthor(filename: string): { title: string; auth
     }
   }
 
-  // Pattern: "Title by Author"
   const byMatch = base.match(/(.+)\s+by\s+(.+)/i);
   if (byMatch) {
     return { title: byMatch[1].trim(), author: byMatch[2].trim() };
   }
 
-  // Pattern: "[Author] Title" or "(Author) Title"
   const bracketMatch = base.match(/^(\[|\()([^\]\)]+)(\]|\))\s*(.+)/);
   if (bracketMatch) {
     return { author: bracketMatch[2].trim(), title: bracketMatch[4].trim() };
@@ -127,6 +123,63 @@ function getFilenameFromUri(uri: string): string {
 
 export const FileScannerService = {
   /**
+   * Converts any content:// or remote URI to a local file:// URI by caching it locally
+   */
+  async ensureLocalFileUri(book: BookItem): Promise<string> {
+    if (!book.uri) return '';
+
+    // If it's already a file:// URI that exists, return it
+    if (book.uri.startsWith('file://')) {
+      return book.uri;
+    }
+
+    try {
+      const booksDir = `${FileSystem.cacheDirectory}books/`;
+      const dirInfo = await FileSystem.getInfoAsync(booksDir);
+      if (!dirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(booksDir, { intermediates: true });
+      }
+
+      // Safe alphanumeric filename with original extension
+      const ext = book.filename.split('.').pop() || book.format || 'pdf';
+      const safeFilename = `doc_${book.id.replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`;
+      const destinationUri = `${booksDir}${safeFilename}`;
+
+      const fileInfo = await FileSystem.getInfoAsync(destinationUri);
+      if (fileInfo.exists && fileInfo.size > 0) {
+        return destinationUri;
+      }
+
+      // Copy from content:// or other scheme to local file:// URI
+      await FileSystem.copyAsync({
+        from: book.uri,
+        to: destinationUri,
+      });
+
+      return destinationUri;
+    } catch (e) {
+      console.warn('Failed to cache local file URI:', e);
+      return book.uri;
+    }
+  },
+
+  /**
+   * Reads raw base64 or text content of a file
+   */
+  async readFileContent(book: BookItem, encoding: 'utf8' | 'base64' = 'utf8'): Promise<string> {
+    const localUri = await this.ensureLocalFileUri(book);
+    try {
+      const content = await FileSystem.readAsStringAsync(localUri, {
+        encoding: encoding === 'base64' ? FileSystem.EncodingType.Base64 : FileSystem.EncodingType.UTF8,
+      });
+      return content;
+    } catch (e) {
+      console.error(`Failed to read file ${book.title}:`, e);
+      throw e;
+    }
+  },
+
+  /**
    * Automatically scans device storage recursively using StorageAccessFramework (Android)
    * or Document Directory (iOS/Web)
    */
@@ -145,7 +198,6 @@ export const FileScannerService = {
           directoryUri = await AsyncStorage.getItem(SAVED_SCAN_URI_KEY);
         }
 
-        // If no saved directory or user forced a new scan path, request permissions
         if (!directoryUri) {
           const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
           if (!permissions.granted) {
@@ -155,7 +207,6 @@ export const FileScannerService = {
           await AsyncStorage.setItem(SAVED_SCAN_URI_KEY, directoryUri);
         }
 
-        // Recursive crawling queue
         const queue: string[] = [directoryUri];
         const visited = new Set<string>();
 
@@ -177,13 +228,11 @@ export const FileScannerService = {
               const filename = getFilenameFromUri(itemUri);
               const ext = filename.split('.').pop()?.toLowerCase() || '';
 
-              // Check if item is a subfolder
               if (itemUri.includes('%2F') && !ext) {
                 queue.push(itemUri);
                 continue;
               }
 
-              // Check if file is a supported book/document format
               if (SUPPORTED_EXTENSIONS.has(ext)) {
                 const { title, author } = parseBookTitleAndAuthor(filename);
                 const format = getFormatFromExtension(filename);
@@ -224,7 +273,6 @@ export const FileScannerService = {
         return await this.pickAndImportDocuments();
       }
     } else {
-      // iOS / Web fallback: scan standard documents directory or prompt user
       if (FileSystem.documentDirectory) {
         try {
           const files = await FileSystem.readDirectoryAsync(FileSystem.documentDirectory);
@@ -323,24 +371,22 @@ export const FileScannerService = {
   },
 
   /**
-   * Open document using native viewer or system sharing
+   * Share file externally safely using local file URI
    */
-  async openDocument(book: BookItem): Promise<void> {
+  async shareDocumentSafely(book: BookItem): Promise<void> {
     try {
+      const localUri = await this.ensureLocalFileUri(book);
       const isAvailable = await Sharing.isAvailableAsync();
-      if (isAvailable && book.uri) {
-        await Sharing.shareAsync(book.uri, {
-          dialogTitle: `Open ${book.title}`,
+      if (isAvailable && localUri) {
+        await Sharing.shareAsync(localUri, {
+          dialogTitle: `Share ${book.title}`,
           mimeType: book.format === 'pdf' ? 'application/pdf' : undefined,
         });
-      } else if (book.uri) {
-        await Linking.openURL(book.uri);
+      } else if (localUri) {
+        await Linking.openURL(localUri);
       }
     } catch (e) {
-      console.error('Failed to open document:', e);
-      if (book.uri) {
-        await Linking.openURL(book.uri).catch((err) => console.error('Link open error:', err));
-      }
+      console.warn('Share document failed:', e);
     }
   },
 };

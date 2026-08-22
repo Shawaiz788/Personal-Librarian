@@ -3,6 +3,7 @@ import { View, StyleSheet, Modal } from 'react-native';
 import { useResponsiveLayout } from '../../hooks/useResponsiveLayout';
 import { TabletNavRail } from './TabletNavRail';
 import { BookInspector } from './BookInspector';
+import { InAppReaderModal } from '../reader/InAppReaderModal';
 import { useLibrary } from '../../context/LibraryContext';
 import { Palette } from '../../constants/theme';
 
@@ -15,12 +16,15 @@ export const TabletSplitLayout: React.FC<TabletSplitLayoutProps> = ({ children }
   const {
     books,
     selectedBook,
+    readingBook,
     categories,
     setSelectedBook,
     updateBook,
     deleteBook,
     openBookFile,
     scanDevice,
+    closeReader,
+    updateReadingProgress,
   } = useLibrary();
 
   return (
@@ -72,6 +76,14 @@ export const TabletSplitLayout: React.FC<TabletSplitLayoutProps> = ({ children }
           </View>
         </Modal>
       )}
+
+      {/* 4. In-App Document & PDF Reader Modal */}
+      <InAppReaderModal
+        book={readingBook}
+        visible={Boolean(readingBook)}
+        onClose={closeReader}
+        onUpdateProgress={updateReadingProgress}
+      />
     </View>
   );
 };
