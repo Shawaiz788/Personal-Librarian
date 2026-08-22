@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -24,6 +24,9 @@ import { ScanDialogModal } from '../../components/library/ScanDialogModal';
 import { SearchEngineService } from '../../services/searchEngine';
 import { TaxonomyEngine } from '../../services/taxonomyEngine';
 import { Palette } from '../../constants/theme';
+import { BookItem } from '../../types/book';
+
+const PAGE_SIZE = 24;
 
 export default function LibraryScreen() {
   const {
@@ -45,10 +48,27 @@ export default function LibraryScreen() {
 
   const { isTablet, numColumns } = useResponsiveLayout();
   const [showScanDialog, setShowScanDialog] = useState(false);
+  const [displayCount, setDisplayCount] = useState(PAGE_SIZE);
+
+  // Reset pagination when search query or category filter changes
+  useEffect(() => {
+    setDisplayCount(PAGE_SIZE);
+  }, [filter.query, filter.categoryId, filter.format]);
 
   const formatCounts = useMemo(() => {
     return SearchEngineService.getFormatCounts(books);
   }, [books]);
+
+  // Paginated books for grid and list views
+  const paginatedBooks = useMemo(() => {
+    return filteredBooks.slice(0, displayCount);
+  }, [filteredBooks, displayCount]);
+
+  const handleLoadMore = useCallback(() => {
+    if (displayCount < filteredBooks.length) {
+      setDisplayCount((prev) => Math.min(prev + PAGE_SIZE, filteredBooks.length));
+    }
+  }, [displayCount, filteredBooks.length]);
 
   // Last read active book for Hero card
   const lastReadBook = useMemo(() => {
@@ -74,7 +94,7 @@ export default function LibraryScreen() {
     });
   };
 
-  const renderHeroBanner = () => {
+  const renderHeroBanner = useCallback(() => {
     if (!lastReadBook || filter.query || filter.categoryId !== 'all') return null;
 
     return (
@@ -98,7 +118,6 @@ export default function LibraryScreen() {
               {lastReadBook.author} • {lastReadBook.format.toUpperCase()}
             </Text>
 
-            {/* Progress indicator */}
             <View style={styles.heroProgressRow}>
               <View style={styles.heroProgressBar}>
                 <View
@@ -125,7 +144,34 @@ export default function LibraryScreen() {
         </View>
       </View>
     );
-  };
+  }, [lastReadBook, filter.query, filter.categoryId, openBookFile]);
+
+  const renderGridItem = useCallback(
+    ({ item }: { item: BookItem }) => (
+      <View style={{ flex: 1 / numColumns }}>
+        <BookCard
+          book={item}
+          onPress={setSelectedBook}
+          isSelected={selectedBook?.id === item.id}
+        />
+      </View>
+    ),
+    [numColumns, selectedBook?.id, setSelectedBook]
+  );
+
+  const renderListItem = useCallback(
+    ({ item }: { item: BookItem }) => (
+      <BookListItem
+        book={item}
+        onPress={setSelectedBook}
+        onOpen={openBookFile}
+        isSelected={selectedBook?.id === item.id}
+      />
+    ),
+    [selectedBook?.id, setSelectedBook, openBookFile]
+  );
+
+  const keyExtractor = useCallback((item: BookItem) => item.id, []);
 
   return (
     <TabletSplitLayout>
@@ -148,7 +194,7 @@ export default function LibraryScreen() {
           isTablet={isTablet}
         />
 
-        {/* Dynamic Category Chips Bar (Based only on books you got) */}
+        {/* Dynamic Category Chips Bar */}
         {books.length > 0 && (
           <FilterChipGroup
             filter={filter}
@@ -199,47 +245,36 @@ export default function LibraryScreen() {
             ))}
           </ScrollView>
         ) : viewMode === 'grid' ? (
-          /* Grid View Mode with Hero Banner */
+          /* Paged Grid View Mode */
           <FlatList
             key={`grid_${numColumns}`}
-            data={filteredBooks}
+            data={paginatedBooks}
             numColumns={numColumns}
-            keyExtractor={(item) => item.id}
+            keyExtractor={keyExtractor}
             ListHeaderComponent={renderHeroBanner}
-            renderItem={({ item }) => (
-              <View style={{ flex: 1 / numColumns }}>
-                <BookCard
-                  book={item}
-                  onPress={setSelectedBook}
-                  isSelected={selectedBook?.id === item.id}
-                />
-              </View>
-            )}
+            renderItem={renderGridItem}
             initialNumToRender={12}
             maxToRenderPerBatch={12}
             windowSize={5}
             removeClippedSubviews={true}
+            onEndReached={handleLoadMore}
+            onEndReachedThreshold={0.5}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
           />
         ) : (
-          /* List View Mode */
+          /* Paged List View Mode */
           <FlatList
-            data={filteredBooks}
-            keyExtractor={(item) => item.id}
+            data={paginatedBooks}
+            keyExtractor={keyExtractor}
             ListHeaderComponent={renderHeroBanner}
-            renderItem={({ item }) => (
-              <BookListItem
-                book={item}
-                onPress={setSelectedBook}
-                onOpen={openBookFile}
-                isSelected={selectedBook?.id === item.id}
-              />
-            )}
+            renderItem={renderListItem}
             initialNumToRender={16}
             maxToRenderPerBatch={16}
             windowSize={5}
             removeClippedSubviews={true}
+            onEndReached={handleLoadMore}
+            onEndReachedThreshold={0.5}
             contentContainerStyle={styles.denseListContent}
             showsVerticalScrollIndicator={false}
           />
@@ -271,8 +306,8 @@ const styles = StyleSheet.create({
     backgroundColor: Palette.bg,
   },
   heroContainer: {
-    paddingHorizontal: 12,
-    paddingTop: 12,
+    paddingHorizontal: 10,
+    paddingTop: 10,
     paddingBottom: 4,
   },
   heroCard: {
@@ -295,10 +330,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
   },
   heroDetails: {
     flex: 1,
@@ -311,12 +342,12 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   heroTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '800',
     color: Palette.text,
   },
   heroAuthor: {
-    fontSize: 12,
+    fontSize: 11,
     color: Palette.textMuted,
     marginTop: 2,
   },
@@ -348,7 +379,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: Palette.primary,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 9,
     borderRadius: 10,
     gap: 6,
   },
@@ -358,15 +389,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   listContent: {
-    padding: 8,
+    padding: 6,
     paddingBottom: 40,
   },
   shelfScrollContent: {
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingBottom: 50,
   },
   denseListContent: {
-    paddingVertical: 8,
+    paddingVertical: 6,
     paddingBottom: 40,
   },
 });

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BookItem } from '../../types/book';
@@ -13,122 +13,125 @@ interface BookCardProps {
   style?: ViewStyle;
 }
 
-export const BookCard: React.FC<BookCardProps> = ({
-  book,
-  onPress,
-  isSelected = false,
-  style,
-}) => {
-  const gradient = book.coverGradient || [book.coverColor || '#4F46E5', '#3730A3'];
-  const hasProgress = book.readingProgress > 0;
-  const isCompleted = book.readingProgress >= 100;
+export const BookCard: React.FC<BookCardProps> = memo(
+  ({ book, onPress, isSelected = false, style }) => {
+    const gradient = book.coverGradient || [book.coverColor || '#4F46E5', '#3730A3'];
+    const hasProgress = (book.readingProgress || 0) > 0;
+    const isCompleted = (book.readingProgress || 0) >= 100;
 
-  const getFormatColor = (fmt: string) => {
-    switch (fmt) {
-      case 'pdf':
-        return '#EF4444';
-      case 'epub':
-        return '#10B981';
-      case 'txt':
-        return '#64748B';
-      case 'docx':
-        return '#3B82F6';
-      default:
-        return '#8B5CF6';
-    }
-  };
+    const getFormatColor = (fmt: string) => {
+      switch (fmt) {
+        case 'pdf':
+          return '#EF4444';
+        case 'epub':
+          return '#10B981';
+        case 'txt':
+          return '#64748B';
+        case 'docx':
+          return '#3B82F6';
+        default:
+          return '#8B5CF6';
+      }
+    };
 
-  return (
-    <TouchableOpacity
-      style={[
-        styles.cardContainer,
-        isSelected && styles.selectedContainer,
-        style,
-      ]}
-      onPress={() => onPress(book)}
-      activeOpacity={0.88}
-    >
-      {/* 3D Book Cover View */}
-      <View
+    return (
+      <TouchableOpacity
         style={[
-          styles.cover,
-          {
-            backgroundColor: gradient[0],
-            borderColor: isSelected ? Palette.accent : 'rgba(255, 255, 255, 0.1)',
-          },
+          styles.cardContainer,
+          isSelected && styles.selectedContainer,
+          style,
         ]}
+        onPress={() => onPress(book)}
+        activeOpacity={0.88}
       >
-        {/* Book Spine Shadow Accent */}
-        <View style={styles.spineShadow} />
-        
-        {/* Top Badges */}
-        <View style={styles.coverHeader}>
-          <Badge
-            label={book.format.toUpperCase()}
-            bgColor={getFormatColor(book.format)}
-            color="#FFF"
-            size="small"
-          />
-          {book.rating && book.rating > 0 ? (
-            <View style={styles.ratingBadge}>
-              <Ionicons name="star" size={11} color={Palette.accent} />
-              <Text style={styles.ratingText}>{book.rating}</Text>
-            </View>
-          ) : null}
+        {/* 3D Book Cover View */}
+        <View
+          style={[
+            styles.cover,
+            {
+              backgroundColor: gradient[0],
+              borderColor: isSelected ? Palette.accent : 'rgba(255, 255, 255, 0.1)',
+            },
+          ]}
+        >
+          {/* Book Spine Shadow Accent */}
+          <View style={styles.spineShadow} />
+
+          {/* Top Badges */}
+          <View style={styles.coverHeader}>
+            <Badge
+              label={book.format.toUpperCase()}
+              bgColor={getFormatColor(book.format)}
+              color="#FFF"
+              size="small"
+            />
+            {book.rating && book.rating > 0 ? (
+              <View style={styles.ratingBadge}>
+                <Ionicons name="star" size={11} color={Palette.accent} />
+                <Text style={styles.ratingText}>{book.rating}</Text>
+              </View>
+            ) : null}
+          </View>
+
+          {/* Center Title Art */}
+          <View style={styles.coverBody}>
+            <Ionicons name="book-outline" size={26} color="rgba(255, 255, 255, 0.4)" style={styles.watermarkIcon} />
+            <Text style={styles.coverTitle} numberOfLines={2}>
+              {book.title}
+            </Text>
+            <Text style={styles.coverAuthor} numberOfLines={1}>
+              {book.author}
+            </Text>
+          </View>
+
+          {/* Bottom Progress Bar / Completion */}
+          <View style={styles.coverFooter}>
+            {hasProgress ? (
+              <View style={styles.progressContainer}>
+                <View style={styles.progressTrack}>
+                  <View
+                    style={[
+                      styles.progressFill,
+                      {
+                        width: `${Math.min(book.readingProgress, 100)}%`,
+                        backgroundColor: isCompleted ? Palette.success : Palette.accent,
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={styles.progressText}>
+                  {isCompleted ? 'Done' : `${Math.round(book.readingProgress)}%`}
+                </Text>
+              </View>
+            ) : (
+              <Text style={styles.fileSizeText}>{formatBytes(book.fileSize)}</Text>
+            )}
+          </View>
         </View>
 
-        {/* Center Title Art */}
-        <View style={styles.coverBody}>
-          <Ionicons name="book-outline" size={28} color="rgba(255, 255, 255, 0.4)" style={styles.watermarkIcon} />
-          <Text style={styles.coverTitle} numberOfLines={3}>
+        {/* Under-Card Metadata */}
+        <View style={styles.metaContainer}>
+          <Text style={styles.bookTitle} numberOfLines={1}>
             {book.title}
           </Text>
-          <Text style={styles.coverAuthor} numberOfLines={1}>
+          <Text style={styles.bookAuthor} numberOfLines={1}>
             {book.author}
           </Text>
         </View>
+      </TouchableOpacity>
+    );
+  },
+  (prev, next) =>
+    prev.book.id === next.book.id &&
+    prev.book.readingProgress === next.book.readingProgress &&
+    prev.isSelected === next.isSelected
+);
 
-        {/* Bottom Progress Bar / Completion */}
-        <View style={styles.coverFooter}>
-          {hasProgress ? (
-            <View style={styles.progressContainer}>
-              <View style={styles.progressTrack}>
-                <View
-                  style={[
-                    styles.progressFill,
-                    {
-                      width: `${Math.min(book.readingProgress, 100)}%`,
-                      backgroundColor: isCompleted ? Palette.success : Palette.accent,
-                    },
-                  ]}
-                />
-              </View>
-              <Text style={styles.progressText}>
-                {isCompleted ? 'Finished' : `${Math.round(book.readingProgress)}%`}
-              </Text>
-            </View>
-          ) : (
-            <Text style={styles.fileSizeText}>{formatBytes(book.fileSize)}</Text>
-          )}
-        </View>
-      </View>
-
-      {/* Under-Card Metadata */}
-      <View style={styles.metaContainer}>
-        <Text style={styles.bookTitle} numberOfLines={1}>
-          {book.title}
-        </Text>
-        <Text style={styles.bookAuthor} numberOfLines={1}>
-          {book.author}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  );
-};
+BookCard.displayName = 'BookCard';
 
 const styles = StyleSheet.create({
   cardContainer: {
-    margin: 8,
+    margin: 6,
     borderRadius: 14,
     backgroundColor: Palette.surface,
     padding: 10,
@@ -189,18 +192,18 @@ const styles = StyleSheet.create({
   coverBody: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
     zIndex: 2,
   },
   watermarkIcon: {
-    marginBottom: 8,
+    marginBottom: 6,
   },
   coverTitle: {
     color: '#FFF',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800',
     textAlign: 'center',
-    lineHeight: 18,
+    lineHeight: 17,
     textShadowColor: 'rgba(0, 0, 0, 0.6)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
@@ -209,7 +212,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.85)',
     fontSize: 11,
     fontWeight: '600',
-    marginTop: 4,
+    marginTop: 3,
     textAlign: 'center',
   },
   coverFooter: {
@@ -243,12 +246,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   metaContainer: {
-    marginTop: 10,
-    paddingHorizontal: 4,
+    marginTop: 8,
+    paddingHorizontal: 2,
   },
   bookTitle: {
     color: Palette.text,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
   },
   bookAuthor: {

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,9 @@ import { BookCard } from '../../components/library/BookCard';
 import { BookListItem } from '../../components/library/BookListItem';
 import { SearchEngineService } from '../../services/searchEngine';
 import { Palette } from '../../constants/theme';
+import { BookItem } from '../../types/book';
+
+const PAGE_SIZE = 24;
 
 export default function SearchScreen() {
   const {
@@ -32,6 +35,11 @@ export default function SearchScreen() {
   } = useLibrary();
 
   const { numColumns } = useResponsiveLayout();
+  const [displayCount, setDisplayCount] = useState(PAGE_SIZE);
+
+  useEffect(() => {
+    setDisplayCount(PAGE_SIZE);
+  }, [filter.query, filter.categoryId, filter.format, filter.tag]);
 
   const formatCounts = useMemo(() => {
     return SearchEngineService.getFormatCounts(books);
@@ -58,6 +66,43 @@ export default function SearchScreen() {
       sortBy: 'date-desc',
     });
   };
+
+  const paginatedBooks = useMemo(() => {
+    return filteredBooks.slice(0, displayCount);
+  }, [filteredBooks, displayCount]);
+
+  const handleLoadMore = useCallback(() => {
+    if (displayCount < filteredBooks.length) {
+      setDisplayCount((prev) => Math.min(prev + PAGE_SIZE, filteredBooks.length));
+    }
+  }, [displayCount, filteredBooks.length]);
+
+  const renderGridItem = useCallback(
+    ({ item }: { item: BookItem }) => (
+      <View style={{ flex: 1 / numColumns }}>
+        <BookCard
+          book={item}
+          onPress={setSelectedBook}
+          isSelected={selectedBook?.id === item.id}
+        />
+      </View>
+    ),
+    [numColumns, selectedBook?.id, setSelectedBook]
+  );
+
+  const renderListItem = useCallback(
+    ({ item }: { item: BookItem }) => (
+      <BookListItem
+        book={item}
+        onPress={setSelectedBook}
+        onOpen={openBookFile}
+        isSelected={selectedBook?.id === item.id}
+      />
+    ),
+    [selectedBook?.id, setSelectedBook, openBookFile]
+  );
+
+  const keyExtractor = useCallback((item: BookItem) => item.id, []);
 
   const renderHeader = () => (
     <View>
@@ -218,21 +263,16 @@ export default function SearchScreen() {
 
         {viewMode === 'list' ? (
           <FlatList
-            data={filteredBooks}
-            keyExtractor={(item) => item.id}
+            data={paginatedBooks}
+            keyExtractor={keyExtractor}
             ListHeaderComponent={renderHeader}
-            renderItem={({ item }) => (
-              <BookListItem
-                book={item}
-                onPress={setSelectedBook}
-                onOpen={openBookFile}
-                isSelected={selectedBook?.id === item.id}
-              />
-            )}
+            renderItem={renderListItem}
             initialNumToRender={16}
             maxToRenderPerBatch={16}
             windowSize={5}
             removeClippedSubviews={true}
+            onEndReached={handleLoadMore}
+            onEndReachedThreshold={0.5}
             ListEmptyComponent={
               <View style={styles.emptySearch}>
                 <Ionicons name="search-outline" size={40} color={Palette.textDim} />
@@ -247,23 +287,17 @@ export default function SearchScreen() {
         ) : (
           <FlatList
             key={`search_grid_${numColumns}`}
-            data={filteredBooks}
+            data={paginatedBooks}
             numColumns={numColumns}
-            keyExtractor={(item) => item.id}
+            keyExtractor={keyExtractor}
             ListHeaderComponent={renderHeader}
-            renderItem={({ item }) => (
-              <View style={{ flex: 1 / numColumns }}>
-                <BookCard
-                  book={item}
-                  onPress={setSelectedBook}
-                  isSelected={selectedBook?.id === item.id}
-                />
-              </View>
-            )}
+            renderItem={renderGridItem}
             initialNumToRender={16}
             maxToRenderPerBatch={16}
             windowSize={5}
             removeClippedSubviews={true}
+            onEndReached={handleLoadMore}
+            onEndReachedThreshold={0.5}
             ListEmptyComponent={
               <View style={styles.emptySearch}>
                 <Ionicons name="search-outline" size={40} color={Palette.textDim} />

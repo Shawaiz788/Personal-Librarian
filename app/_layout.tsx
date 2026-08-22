@@ -1,10 +1,9 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import * as ScreenOrientation from 'expo-screen-orientation';
 import { LibraryProvider } from '../context/LibraryContext';
 import { Palette } from '../constants/theme';
 
@@ -25,13 +24,6 @@ const CustomLightTheme = {
 };
 
 export default function RootLayout() {
-  useEffect(() => {
-    // Dynamically unlock orientation to allow full-screen landscape and portrait rotation
-    ScreenOrientation.unlockAsync().catch((err) => {
-      console.warn('ScreenOrientation unlock error:', err);
-    });
-  }, []);
-
   return (
     <SafeAreaProvider style={{ flex: 1 }}>
       <LibraryProvider>
