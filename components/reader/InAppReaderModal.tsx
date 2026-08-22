@@ -39,7 +39,6 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
 }) => {
   const webViewRef = useRef<any>(null);
   const [loading, setLoading] = useState(true);
-  const [localFileUri, setLocalFileUri] = useState<string | null>(null);
   const [pdfBase64, setPdfBase64] = useState<string | null>(null);
   const [textContent, setTextContent] = useState<string | null>(null);
   const [themeMode, setThemeMode] = useState<'light' | 'sepia' | 'dark'>('light');
@@ -55,7 +54,6 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
     if (!book || !visible) return;
 
     setLoading(true);
-    setLocalFileUri(null);
     setPdfBase64(null);
     setTextContent(null);
     setCurrentPage(1);
@@ -73,18 +71,11 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
             );
           }
         } else {
-          // 1. Ensure local file URI for direct zero-memory streaming
-          const uri = await FileScannerService.ensureLocalFileUri(book);
-          setLocalFileUri(uri);
-
-          // 2. If file is small (< 15MB), also attempt base64 for maximum compatibility
-          if (book.fileSize && book.fileSize < 15 * 1024 * 1024) {
-            try {
-              const b64 = await FileScannerService.readFileContent(book, 'base64');
-              setPdfBase64(b64);
-            } catch {
-              // base64 fallback not needed if direct URI is available
-            }
+          try {
+            const b64 = await FileScannerService.readFileContent(book, 'base64');
+            setPdfBase64(b64);
+          } catch (e) {
+            console.warn('Failed to load base64 for in-app reader:', e);
           }
         }
       } catch (err) {
@@ -167,7 +158,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
 
   const currentTheme = getReaderColors();
 
-  // High-performance centered PDF reader with direct file streaming & swipe gesture support
+  // High-performance centered PDF reader with direct data loading & swipe gesture support
   const pdfViewerHtml = `
     <!DOCTYPE html>
     <html>
@@ -223,7 +214,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
         </style>
       </head>
       <body>
-        <div id="status-msg">Loading Document...</div>
+        <div id="status-msg">Rendering PDF...</div>
         <div id="pdf-wrapper">
           <canvas id="pdf-canvas"></canvas>
         </div>
@@ -306,7 +297,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
             }
           };
 
-          // Swipe gestures for seamless page turns
+          // Swipe gestures for page turns
           var startX = 0;
           var startY = 0;
           var endX = 0;
@@ -343,38 +334,22 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
           }, { passive: true });
 
           try {
-            var fileUrl = "${localFileUri || ''}";
             var b64Data = "${pdfBase64 || ''}";
-            var loadDocPromise = null;
-
-            if (fileUrl && fileUrl.length > 0) {
-              loadDocPromise = pdfjsLib.getDocument({
-                url: fileUrl,
-                cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
-                cMapPacked: true,
-                disableRange: false,
-                disableStream: false,
-                disableAutoFetch: false
-              }).promise;
-            } else if (b64Data && b64Data.length > 0) {
+            if (b64Data && b64Data.length > 0) {
               var typedArray = decodeBase64ToUint8(b64Data);
-              loadDocPromise = pdfjsLib.getDocument({
+              pdfjsLib.getDocument({
                 data: typedArray,
                 cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
                 cMapPacked: true
-              }).promise;
-            }
-
-            if (loadDocPromise) {
-              loadDocPromise.then(function(pdf) {
+              }).promise.then(function(pdf) {
                 pdfDoc = pdf;
                 sendMsg({ type: 'TOTAL_PAGES', count: pdf.numPages });
                 renderPage(1);
               }).catch(function(err) {
-                document.getElementById('status-msg').innerText = 'Rendering in-app: ' + err.message;
+                document.getElementById('status-msg').innerText = 'Could not load PDF in reader: ' + err.message;
               });
             } else {
-              document.getElementById('status-msg').innerText = 'Document ready for reading.';
+              document.getElementById('status-msg').innerText = 'No PDF data available.';
             }
           } catch (e) {
             document.getElementById('status-msg').innerText = 'Error initializing reader: ' + e.message;
@@ -467,7 +442,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
                 {textContent}
               </Text>
             </ScrollView>
-          ) : SafeWebView && (localFileUri || pdfBase64) ? (
+          ) : SafeWebView && pdfBase64 ? (
             <SafeWebView
               ref={webViewRef}
               originWhitelist={['*']}
@@ -495,7 +470,7 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
         </View>
 
         {/* Recycler-Style Bottom Navigation Bar */}
-        {(localFileUri || pdfBase64) && totalPages > 1 && (
+        {pdfBase64 && totalPages > 1 && (
           <View style={[styles.pagingBar, { backgroundColor: currentTheme.headerBg, borderColor: currentTheme.border }]}>
             {/* Previous Page Button */}
             <TouchableOpacity
