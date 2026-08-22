@@ -91,6 +91,8 @@ export const TabletSplitLayout: React.FC<TabletSplitLayoutProps> = ({ children }
 const styles = StyleSheet.create({
   rootContainer: {
     flex: 1,
+    width: '100%',
+    height: '100%',
     flexDirection: 'row',
     backgroundColor: Palette.bg,
   },
