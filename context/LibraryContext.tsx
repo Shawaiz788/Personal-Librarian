@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
 import { BookItem, Category, Collection, FilterState, ViewMode } from '../types/book';
-import { StorageService, DEFAULT_CATEGORIES } from '../services/storage';
+import { StorageService } from '../services/storage';
 import { FileScannerService } from '../services/fileScanner';
 import { SearchEngineService } from '../services/searchEngine';
+import { TaxonomyEngine } from '../services/taxonomyEngine';
 
 interface ScanProgressInfo {
   scannedDirs: number;
@@ -14,6 +15,7 @@ interface LibraryContextType {
   books: BookItem[];
   filteredBooks: BookItem[];
   categories: Category[];
+  customCategories: Category[];
   collections: Collection[];
   filter: FilterState;
   viewMode: ViewMode;
@@ -51,7 +53,7 @@ const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
 
 export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [books, setBooks] = useState<BookItem[]>([]);
-  const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
+  const [customCategories, setCustomCategories] = useState<Category[]>([]);
   const [collections, setCollections] = useState<Collection[]>([]);
   const [filter, setFilter] = useState<FilterState>(defaultFilter);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
@@ -74,7 +76,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         StorageService.loadCollections(),
       ]);
       setBooks(savedBooks);
-      setCategories(savedCategories);
+      setCustomCategories(savedCategories.filter((c) => !c.isSystem));
       setCollections(savedCollections);
     } catch (e) {
       console.error('Failed to load library:', e);
@@ -86,6 +88,13 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   useEffect(() => {
     reloadLibrary();
   }, []);
+
+  // Compute dynamic categories strictly from the books currently loaded in the library
+  const categories = useMemo(() => {
+    const dynamicCats = TaxonomyEngine.computeDynamicCategories(books);
+    // Combine dynamic categories with user-created custom categories
+    return [...dynamicCats, ...customCategories];
+  }, [books, customCategories]);
 
   const filteredBooks = useMemo(() => {
     return SearchEngineService.filterAndSortBooks(books, filter);
@@ -177,9 +186,9 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       icon,
       isSystem: false,
     };
-    const updated = [...categories, newCategory];
+    const updated = [...customCategories, newCategory];
     await StorageService.saveCategories(updated);
-    setCategories(updated);
+    setCustomCategories(updated);
   };
 
   const createCollection = async (name: string, description: string, color: string) => {
@@ -221,6 +230,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         books,
         filteredBooks,
         categories,
+        customCategories,
         collections,
         filter,
         viewMode,

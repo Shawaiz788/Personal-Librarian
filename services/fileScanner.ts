@@ -6,6 +6,7 @@ import * as Linking from 'expo-linking';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BookFormat, BookItem } from '../types/book';
 import { Palette } from '../constants/theme';
+import { TaxonomyEngine } from './taxonomyEngine';
 
 const SAVED_SCAN_URI_KEY = '@book_search_engine_scan_directory_uri';
 
@@ -223,11 +224,14 @@ export const FileScannerService = {
             (asset.uri || filename).split('').reduce((a: number, b: string) => ((a << 5) - a + b.charCodeAt(0)) | 0, 0)
           );
 
+          const categoryId = TaxonomyEngine.classifyBook(title, filename, format);
+
           const book: BookItem = {
             id: `book_${hashId}_${Date.now() % 100000}`,
             title,
             author,
             format,
+            categoryId,
             uri: asset.uri,
             filename,
             fileSize: asset.size || 0,
@@ -318,11 +322,14 @@ export const FileScannerService = {
                   itemUri.split('').reduce((a: number, b: string) => ((a << 5) - a + b.charCodeAt(0)) | 0, 0)
                 );
 
+                const categoryId = TaxonomyEngine.classifyBook(title, filename, format);
+
                 const book: BookItem = {
                   id: `book_${hashId}`,
                   title,
                   author,
                   format,
+                  categoryId,
                   uri: itemUri,
                   filename,
                   fileSize: 0,

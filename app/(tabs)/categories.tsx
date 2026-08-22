@@ -31,8 +31,6 @@ export default function CategoriesScreen() {
 
   const { isTablet, isLandscape } = useResponsiveLayout();
 
-  // Compute clean number of columns:
-  // Tablet landscape: 3 cols, Tablet portrait / Phone landscape: 2 cols, Phone portrait: 1 col
   const catColumns = isTablet && isLandscape ? 3 : isTablet || isLandscape ? 2 : 1;
 
   const [modalType, setModalType] = useState<'category' | 'collection' | null>(null);
@@ -69,92 +67,135 @@ export default function CategoriesScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerTitleWrap}>
-            <Text style={styles.headerTitle}>Categories & Collections</Text>
+            <Text style={styles.headerTitle}>Category Explorer</Text>
             <Text style={styles.headerSubtitle}>
-              Organize your documents into topic categories and custom shelves.
+              Organized by topics detected from your {books.length} documents.
             </Text>
           </View>
 
           <View style={styles.headerActions}>
             <TouchableOpacity
               style={styles.addBtn}
-              onPress={() => setModalType('category')}
+              onPress={() => setModalType('collection')}
               activeOpacity={0.8}
             >
-              <Ionicons name="add" size={18} color="#FFF" style={{ marginRight: 4 }} />
-              <Text style={styles.addBtnText}>New Category</Text>
+              <Ionicons name="albums-outline" size={16} color="#FFF" style={{ marginRight: 6 }} />
+              <Text style={styles.addBtnText}>New Shelf</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.addBtn, styles.secondaryAddBtn]}
-              onPress={() => setModalType('collection')}
+              onPress={() => setModalType('category')}
               activeOpacity={0.8}
             >
-              <Ionicons name="albums-outline" size={18} color={Palette.primary} style={{ marginRight: 4 }} />
-              <Text style={[styles.addBtnText, { color: Palette.primary }]}>New Shelf</Text>
+              <Ionicons name="add" size={16} color={Palette.primary} style={{ marginRight: 4 }} />
+              <Text style={[styles.addBtnText, { color: Palette.primary }]}>Add Topic</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          {/* Categories Section Heading */}
+          {/* Dynamic Categories Section */}
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionHeading}>Categories</Text>
-            <Text style={styles.sectionCountBadge}>{categories.length} total</Text>
+            <Text style={styles.sectionHeading}>Detected Categories in Your Library</Text>
+            <Text style={styles.sectionCountBadge}>{categories.length} active topics</Text>
           </View>
 
-          {/* Clean Grid Layout */}
-          <View style={styles.categoryGrid}>
-            {categories.map((cat) => {
-              const bookCount = books.filter((b) => b.categoryId === cat.id).length;
-              const cardWidth = catColumns === 3 ? '31.5%' : catColumns === 2 ? '48%' : '100%';
+          {categories.length === 0 ? (
+            <View style={styles.emptyCategoriesCard}>
+              <Ionicons name="library-outline" size={40} color={Palette.textDim} />
+              <Text style={styles.emptyCategoriesTitle}>No Books Loaded Yet</Text>
+              <Text style={styles.emptyCategoriesDesc}>
+                Once you scan or select books, your categories will automatically generate here based on your actual library content.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.categoryGrid}>
+              {categories.map((cat) => {
+                const categoryBooks = books.filter(
+                  (b) => (b.categoryId || 'general') === cat.id || b.categoryId === cat.id
+                );
+                const cardWidth = catColumns === 3 ? '31.5%' : catColumns === 2 ? '48%' : '100%';
 
-              return (
-                <TouchableOpacity
-                  key={cat.id}
-                  style={[styles.categoryCard, { width: cardWidth }]}
-                  onPress={() => handleSelectCategory(cat.id)}
-                  activeOpacity={0.85}
-                >
-                  <View style={styles.cardTopRow}>
-                    <View style={[styles.iconWrapper, { backgroundColor: `${cat.color}15` }]}>
-                      <Ionicons name={cat.icon as any} size={22} color={cat.color} />
+                // Grab preview cover gradients from first 3 books
+                const previewCovers = categoryBooks.slice(0, 3);
+
+                return (
+                  <TouchableOpacity
+                    key={cat.id}
+                    style={[styles.categoryCard, { width: cardWidth }]}
+                    onPress={() => handleSelectCategory(cat.id)}
+                    activeOpacity={0.85}
+                  >
+                    {/* Top Row: Icon & Count Badge */}
+                    <View style={styles.cardTopRow}>
+                      <View style={[styles.iconWrapper, { backgroundColor: `${cat.color}15` }]}>
+                        <Ionicons name={cat.icon as any} size={22} color={cat.color} />
+                      </View>
+                      <Badge
+                        label={`${categoryBooks.length} ${categoryBooks.length === 1 ? 'Book' : 'Books'}`}
+                        bgColor="rgba(0, 0, 0, 0.05)"
+                        color={Palette.textMuted}
+                      />
                     </View>
-                    <Badge
-                      label={`${bookCount} ${bookCount === 1 ? 'Book' : 'Books'}`}
-                      bgColor="rgba(0, 0, 0, 0.05)"
-                      color={Palette.textMuted}
-                    />
-                  </View>
 
-                  <View style={styles.cardDetails}>
-                    <Text style={styles.catTitle}>{cat.name}</Text>
-                    {cat.description ? (
-                      <Text style={styles.catDesc} numberOfLines={2}>
-                        {cat.description}
-                      </Text>
-                    ) : null}
-                  </View>
+                    {/* Category Title & Description */}
+                    <View style={styles.cardDetails}>
+                      <Text style={styles.catTitle}>{cat.name}</Text>
+                      {cat.description ? (
+                        <Text style={styles.catDesc} numberOfLines={1}>
+                          {cat.description}
+                        </Text>
+                      ) : null}
+                    </View>
 
-                  <View style={styles.cardBottomRow}>
-                    <Text style={styles.viewBooksLink}>View in Library</Text>
-                    <Ionicons name="chevron-forward" size={16} color={Palette.primary} />
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+                    {/* Book Cover Previews Mosaic */}
+                    {previewCovers.length > 0 && (
+                      <View style={styles.coverPreviewRow}>
+                        {previewCovers.map((b, idx) => (
+                          <View
+                            key={b.id}
+                            style={[
+                              styles.miniCover,
+                              {
+                                backgroundColor: b.coverGradient?.[0] || cat.color,
+                                marginLeft: idx > 0 ? -8 : 0,
+                                zIndex: 3 - idx,
+                              },
+                            ]}
+                          >
+                            <Text style={styles.miniCoverText} numberOfLines={1}>
+                              {b.title[0]}
+                            </Text>
+                          </View>
+                        ))}
+                        {categoryBooks.length > 3 && (
+                          <Text style={styles.moreBooksText}>+{categoryBooks.length - 3} more</Text>
+                        )}
+                      </View>
+                    )}
 
-          {/* Custom Collections Section */}
-          <View style={[styles.sectionHeaderRow, { marginTop: 28 }]}>
-            <Text style={styles.sectionHeading}>Custom Shelves & Collections</Text>
+                    {/* Bottom Action */}
+                    <View style={styles.cardBottomRow}>
+                      <Text style={[styles.viewBooksLink, { color: cat.color }]}>Open Category</Text>
+                      <Ionicons name="arrow-forward" size={14} color={cat.color} />
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+
+          {/* Custom User Shelves Section */}
+          <View style={[styles.sectionHeaderRow, { marginTop: 32 }]}>
+            <Text style={styles.sectionHeading}>Custom Reading Shelves & Playlists</Text>
             <Text style={styles.sectionCountBadge}>{collections.length} shelves</Text>
           </View>
 
           {collections.length === 0 ? (
             <View style={styles.emptyCollections}>
               <View style={styles.emptyIconCircle}>
-                <Ionicons name="albums-outline" size={32} color={Palette.primary} />
+                <Ionicons name="albums-outline" size={30} color={Palette.primary} />
               </View>
               <Text style={styles.emptyColTitle}>No Custom Shelves Yet</Text>
               <Text style={styles.emptyColDesc}>
@@ -165,7 +206,7 @@ export default function CategoriesScreen() {
                 onPress={() => setModalType('collection')}
               >
                 <Ionicons name="add" size={16} color="#FFF" style={{ marginRight: 4 }} />
-                <Text style={styles.emptyActionText}>Create First Shelf</Text>
+                <Text style={styles.emptyActionText}>Create Shelf</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -198,12 +239,12 @@ export default function CategoriesScreen() {
           <View style={styles.modalOverlay}>
             <View style={styles.modalCard}>
               <Text style={styles.modalTitle}>
-                {modalType === 'category' ? 'Create New Category' : 'Create Custom Shelf'}
+                {modalType === 'category' ? 'Create Custom Topic' : 'Create Custom Shelf'}
               </Text>
 
               <TextInput
                 style={styles.modalInput}
-                placeholder="Name (e.g. Artificial Intelligence)"
+                placeholder="Name (e.g. Machine Learning, Weekend Reading)"
                 placeholderTextColor={Palette.textDim}
                 value={name}
                 onChangeText={setName}
@@ -234,7 +275,7 @@ export default function CategoriesScreen() {
                 ))}
               </View>
 
-              {/* Icon Selector for Category */}
+              {/* Icon Selector for Topic */}
               {modalType === 'category' && (
                 <>
                   <Text style={styles.modalLabel}>Icon:</Text>
@@ -366,6 +407,29 @@ const styles = StyleSheet.create({
     color: Palette.textMuted,
     fontWeight: '600',
   },
+  emptyCategoriesCard: {
+    backgroundColor: Palette.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Palette.border,
+    padding: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyCategoriesTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: Palette.text,
+    marginTop: 12,
+  },
+  emptyCategoriesDesc: {
+    fontSize: 13,
+    color: Palette.textMuted,
+    textAlign: 'center',
+    maxWidth: 340,
+    marginTop: 6,
+    lineHeight: 18,
+  },
   categoryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -374,7 +438,7 @@ const styles = StyleSheet.create({
   },
   categoryCard: {
     backgroundColor: Palette.surface,
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: Palette.border,
     padding: 16,
@@ -389,7 +453,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   iconWrapper: {
     width: 40,
@@ -399,7 +463,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cardDetails: {
-    marginBottom: 12,
+    marginBottom: 10,
   },
   catTitle: {
     fontSize: 16,
@@ -409,8 +473,36 @@ const styles = StyleSheet.create({
   catDesc: {
     fontSize: 12,
     color: Palette.textMuted,
-    marginTop: 4,
-    lineHeight: 16,
+    marginTop: 3,
+  },
+  coverPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 8,
+  },
+  miniCover: {
+    width: 28,
+    height: 38,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: '#FFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+  },
+  miniCoverText: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  moreBooksText: {
+    fontSize: 11,
+    color: Palette.textMuted,
+    fontWeight: '600',
+    marginLeft: 8,
   },
   cardBottomRow: {
     flexDirection: 'row',
@@ -423,46 +515,45 @@ const styles = StyleSheet.create({
   viewBooksLink: {
     fontSize: 12,
     fontWeight: '700',
-    color: Palette.primary,
   },
   emptyCollections: {
     backgroundColor: Palette.surface,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: Palette.border,
-    padding: 28,
+    padding: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
   emptyIconCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     backgroundColor: 'rgba(79, 70, 229, 0.08)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   emptyColTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: Palette.text,
   },
   emptyColDesc: {
-    fontSize: 13,
+    fontSize: 12,
     color: Palette.textMuted,
     textAlign: 'center',
-    maxWidth: 320,
-    marginTop: 6,
-    lineHeight: 18,
-    marginBottom: 16,
+    maxWidth: 300,
+    marginTop: 4,
+    lineHeight: 16,
+    marginBottom: 14,
   },
   emptyActionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Palette.primary,
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 9,
     borderRadius: 8,
   },
   emptyActionText: {
