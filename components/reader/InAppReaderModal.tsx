@@ -93,9 +93,9 @@ export const InAppReaderModal: React.FC<InAppReaderModalProps> = ({
   };
 
   const handleClose = () => {
-    const progress = totalPages > 0 ? Math.round((currentPage / totalPages) * 100) : 0;
-    onUpdateProgress(book, progress);
+    const progress = totalPages > 0 ? Math.round((currentPage / totalPages) * 100) : (book.readingProgress || 0);
     onClose();
+    onUpdateProgress(book, progress);
   };
 
   // Paging actions sent to WebView

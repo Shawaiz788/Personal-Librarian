@@ -140,28 +140,22 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const updateBook = async (book: BookItem) => {
     const updated = await StorageService.updateBook(book);
     setBooks(updated);
-    if (selectedBook?.id === book.id) {
-      setSelectedBook(book);
-    }
-    if (readingBook?.id === book.id) {
-      setReadingBook(book);
-    }
+    setSelectedBook((curr) => (curr?.id === book.id ? book : curr));
+    setReadingBook((curr) => (curr ? (curr.id === book.id ? book : curr) : null));
   };
 
   const deleteBook = async (bookId: string) => {
     const updated = await StorageService.deleteBook(bookId);
     setBooks(updated);
-    if (selectedBook?.id === bookId) {
-      setSelectedBook(null);
-    }
-    if (readingBook?.id === bookId) {
-      setReadingBook(null);
-    }
+    setSelectedBook((curr) => (curr?.id === bookId ? null : curr));
+    setReadingBook((curr) => (curr?.id === bookId ? null : curr));
   };
 
   const openBookInReader = (book: BookItem) => {
     const updated: BookItem = { ...book, lastReadDate: Date.now() };
-    updateBook(updated);
+    StorageService.updateBook(updated).then((newBooks) => {
+      setBooks(newBooks);
+    });
     setReadingBook(updated);
   };
 
@@ -175,7 +169,9 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       readingProgress: progress,
       lastReadDate: Date.now(),
     };
-    await updateBook(updated);
+    const newBooks = await StorageService.updateBook(updated);
+    setBooks(newBooks);
+    setSelectedBook((curr) => (curr?.id === book.id ? updated : curr));
   };
 
   const createCategory = async (name: string, color: string, icon: string) => {
