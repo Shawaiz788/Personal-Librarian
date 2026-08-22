@@ -1,0 +1,346 @@
+import { Platform } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
+import * as Linking from 'expo-linking';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BookFormat, BookItem } from '../types/book';
+import { Palette } from '../constants/theme';
+
+const SAVED_SCAN_URI_KEY = '@book_search_engine_scan_directory_uri';
+
+const SUPPORTED_EXTENSIONS = new Set([
+  'pdf',
+  'epub',
+  'txt',
+  'md',
+  'mobi',
+  'azw',
+  'azw3',
+  'docx',
+  'doc',
+  'cbr',
+  'cbz',
+]);
+
+/**
+ * Determine format from file extension
+ */
+export function getFormatFromExtension(filename: string): BookFormat {
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+  switch (ext) {
+    case 'pdf':
+      return 'pdf';
+    case 'epub':
+      return 'epub';
+    case 'txt':
+    case 'md':
+      return 'txt';
+    case 'mobi':
+    case 'azw':
+    case 'azw3':
+      return 'mobi';
+    case 'docx':
+    case 'doc':
+      return 'docx';
+    case 'cbr':
+      return 'cbr';
+    case 'cbz':
+      return 'cbz';
+    default:
+      return 'other';
+  }
+}
+
+/**
+ * Smartly parse title and author from filename
+ */
+export function parseBookTitleAndAuthor(filename: string): { title: string; author: string } {
+  // Strip extension
+  const base = filename.replace(/\.[^/.]+$/, '').trim();
+
+  // Pattern: "Author - Title" or "Author _ Title"
+  if (base.includes(' - ')) {
+    const parts = base.split(' - ');
+    if (parts.length >= 2) {
+      return { author: parts[0].trim(), title: parts.slice(1).join(' - ').trim() };
+    }
+  }
+
+  // Pattern: "Title by Author"
+  const byMatch = base.match(/(.+)\s+by\s+(.+)/i);
+  if (byMatch) {
+    return { title: byMatch[1].trim(), author: byMatch[2].trim() };
+  }
+
+  // Pattern: "[Author] Title" or "(Author) Title"
+  const bracketMatch = base.match(/^(\[|\()([^\]\)]+)(\]|\))\s*(.+)/);
+  if (bracketMatch) {
+    return { author: bracketMatch[2].trim(), title: bracketMatch[4].trim() };
+  }
+
+  return { title: base, author: 'Unknown Author' };
+}
+
+/**
+ * Assign a consistent cover gradient based on title hash
+ */
+export function getCoverGradientForTitle(title: string): [string, string] {
+  let hash = 0;
+  for (let i = 0; i < title.length; i++) {
+    hash = (hash << 5) - hash + title.charCodeAt(i);
+    hash |= 0;
+  }
+  const index = Math.abs(hash) % Palette.coverGradients.length;
+  return Palette.coverGradients[index];
+}
+
+/**
+ * Format bytes to human readable format
+ */
+export function formatBytes(bytes: number, decimals = 1): string {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+}
+
+/**
+ * Clean decoded URI to get filename
+ */
+function getFilenameFromUri(uri: string): string {
+  try {
+    const decoded = decodeURIComponent(uri);
+    const parts = decoded.split('/');
+    const lastPart = parts[parts.length - 1];
+    if (lastPart.includes(':')) {
+      const colonParts = lastPart.split(':');
+      return colonParts[colonParts.length - 1];
+    }
+    return lastPart;
+  } catch {
+    return uri.split('/').pop() || 'Document';
+  }
+}
+
+export const FileScannerService = {
+  /**
+   * Automatically scans device storage recursively using StorageAccessFramework (Android)
+   * or Document Directory (iOS/Web)
+   */
+  async autoScanDevice(
+    onProgress?: (scannedDirs: number, foundCount: number, currentName: string) => void,
+    forceNewDirectory = false
+  ): Promise<BookItem[]> {
+    const foundBooks: BookItem[] = [];
+    let scannedDirCount = 0;
+
+    if (Platform.OS === 'android') {
+      try {
+        let directoryUri: string | null = null;
+
+        if (!forceNewDirectory) {
+          directoryUri = await AsyncStorage.getItem(SAVED_SCAN_URI_KEY);
+        }
+
+        // If no saved directory or user forced a new scan path, request permissions
+        if (!directoryUri) {
+          const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+          if (!permissions.granted) {
+            return [];
+          }
+          directoryUri = permissions.directoryUri;
+          await AsyncStorage.setItem(SAVED_SCAN_URI_KEY, directoryUri);
+        }
+
+        // Recursive crawling queue
+        const queue: string[] = [directoryUri];
+        const visited = new Set<string>();
+
+        while (queue.length > 0) {
+          const currentDirUri = queue.shift()!;
+          if (visited.has(currentDirUri)) continue;
+          visited.add(currentDirUri);
+          scannedDirCount++;
+
+          const currentDirName = getFilenameFromUri(currentDirUri);
+          if (onProgress) {
+            onProgress(scannedDirCount, foundBooks.length, currentDirName);
+          }
+
+          try {
+            const contents = await FileSystem.StorageAccessFramework.readDirectoryAsync(currentDirUri);
+
+            for (const itemUri of contents) {
+              const filename = getFilenameFromUri(itemUri);
+              const ext = filename.split('.').pop()?.toLowerCase() || '';
+
+              // Check if item is a subfolder
+              if (itemUri.includes('%2F') && !ext) {
+                queue.push(itemUri);
+                continue;
+              }
+
+              // Check if file is a supported book/document format
+              if (SUPPORTED_EXTENSIONS.has(ext)) {
+                const { title, author } = parseBookTitleAndAuthor(filename);
+                const format = getFormatFromExtension(filename);
+                const gradient = getCoverGradientForTitle(title);
+
+                const hashId = Math.abs(
+                  itemUri.split('').reduce((a: number, b: string) => ((a << 5) - a + b.charCodeAt(0)) | 0, 0)
+                );
+
+                const book: BookItem = {
+                  id: `book_${hashId}`,
+                  title,
+                  author,
+                  format,
+                  uri: itemUri,
+                  filename,
+                  fileSize: 0,
+                  dateAdded: Date.now(),
+                  readingProgress: 0,
+                  coverColor: gradient[0],
+                  coverGradient: gradient,
+                  tags: [format.toUpperCase(), 'AUTO-SCANNED'],
+                };
+
+                foundBooks.push(book);
+
+                if (onProgress) {
+                  onProgress(scannedDirCount, foundBooks.length, filename);
+                }
+              }
+            }
+          } catch (dirErr) {
+            console.warn(`Error reading dir ${currentDirUri}:`, dirErr);
+          }
+        }
+      } catch (err) {
+        console.error('Auto scan error on Android:', err);
+        return await this.pickAndImportDocuments();
+      }
+    } else {
+      // iOS / Web fallback: scan standard documents directory or prompt user
+      if (FileSystem.documentDirectory) {
+        try {
+          const files = await FileSystem.readDirectoryAsync(FileSystem.documentDirectory);
+          for (const file of files) {
+            const ext = file.split('.').pop()?.toLowerCase() || '';
+            if (SUPPORTED_EXTENSIONS.has(ext)) {
+              const { title, author } = parseBookTitleAndAuthor(file);
+              const format = getFormatFromExtension(file);
+              const gradient = getCoverGradientForTitle(title);
+
+              foundBooks.push({
+                id: `book_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+                title,
+                author,
+                format,
+                uri: `${FileSystem.documentDirectory}${file}`,
+                filename: file,
+                fileSize: 0,
+                dateAdded: Date.now(),
+                readingProgress: 0,
+                coverColor: gradient[0],
+                coverGradient: gradient,
+                tags: [format.toUpperCase()],
+              });
+            }
+          }
+        } catch (e) {
+          console.warn('Document dir scan error:', e);
+        }
+      }
+
+      if (foundBooks.length === 0) {
+        return await this.pickAndImportDocuments();
+      }
+    }
+
+    return foundBooks;
+  },
+
+  /**
+   * Pick single or multiple files from device storage using expo-document-picker
+   */
+  async pickAndImportDocuments(): Promise<BookItem[]> {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [
+          'application/pdf',
+          'application/epub+zip',
+          'text/plain',
+          'text/markdown',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'application/msword',
+          'application/x-cbr',
+          'application/x-cbz',
+          '*/*',
+        ],
+        multiple: true,
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return [];
+      }
+
+      const importedBooks: BookItem[] = [];
+
+      for (const asset of result.assets) {
+        const filename = asset.name || 'Untitled Document';
+        const { title, author } = parseBookTitleAndAuthor(filename);
+        const format = getFormatFromExtension(filename);
+        const gradient = getCoverGradientForTitle(title);
+
+        const book: BookItem = {
+          id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          title,
+          author,
+          format,
+          uri: asset.uri,
+          filename,
+          fileSize: asset.size || 0,
+          dateAdded: Date.now(),
+          readingProgress: 0,
+          coverColor: gradient[0],
+          coverGradient: gradient,
+          tags: [format.toUpperCase()],
+        };
+
+        importedBooks.push(book);
+      }
+
+      return importedBooks;
+    } catch (error) {
+      console.error('Error picking documents:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Open document using native viewer or system sharing
+   */
+  async openDocument(book: BookItem): Promise<void> {
+    try {
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (isAvailable && book.uri) {
+        await Sharing.shareAsync(book.uri, {
+          dialogTitle: `Open ${book.title}`,
+          mimeType: book.format === 'pdf' ? 'application/pdf' : undefined,
+        });
+      } else if (book.uri) {
+        await Linking.openURL(book.uri);
+      }
+    } catch (e) {
+      console.error('Failed to open document:', e);
+      if (book.uri) {
+        await Linking.openURL(book.uri).catch((err) => console.error('Link open error:', err));
+      }
+    }
+  },
+};

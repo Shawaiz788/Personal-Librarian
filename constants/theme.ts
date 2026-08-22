@@ -1,41 +1,98 @@
-/**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
- */
-
 import { Platform } from 'react-native';
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
+export const Palette = {
+  // Brand accents
+  primary: '#4F46E5', // Indigo
+  primaryLight: '#6366F1',
+  primaryDark: '#3730A3',
+  accent: '#D97706', // Warm Amber
+  accentGlow: 'rgba(217, 119, 6, 0.15)',
+
+  // Semantic
+  success: '#059669',
+  warning: '#D97706',
+  danger: '#DC2626',
+  info: '#2563EB',
+
+  // Clean White / Light Palette (Primary App Theme)
+  bg: '#F8FAFC',
+  surface: '#FFFFFF',
+  card: '#FFFFFF',
+  cardHover: '#F1F5F9',
+  border: '#E2E8F0',
+  borderLight: '#F1F5F9',
+  text: '#0F172A',
+  textMuted: '#475569',
+  textDim: '#94A3B8',
+
+  // Mapped for seamless component consistency (Clean White Design)
+  darkBg: '#F8FAFC',
+  darkSurface: '#FFFFFF',
+  darkCard: '#FFFFFF',
+  darkCardHover: '#F8FAFC',
+  darkBorder: '#E2E8F0',
+  darkText: '#0F172A',
+  darkTextMuted: '#475569',
+  darkTextDim: '#94A3B8',
+
+  // Light palette explicit
+  lightBg: '#F8FAFC',
+  lightSurface: '#FFFFFF',
+  lightCard: '#FFFFFF',
+  lightBorder: '#E2E8F0',
+  lightText: '#0F172A',
+  lightTextMuted: '#475569',
+  lightTextDim: '#94A3B8',
+
+  // Book cover vibrant gradients
+  coverGradients: [
+    ['#3B82F6', '#1E40AF'], // Ocean Blue
+    ['#8B5CF6', '#5B21B6'], // Royal Purple
+    ['#EC4899', '#9D174D'], // Crimson Rose
+    ['#F59E0B', '#B45309'], // Warm Amber
+    ['#10B981', '#047857'], // Emerald Forest
+    ['#06B6D4', '#0E7490'], // Cyan Depths
+    ['#6366F1', '#3730A3'], // Deep Indigo
+    ['#F97316', '#C2410C'], // Tangerine Sunset
+  ] as [string, string][],
+};
 
 export const Colors = {
   light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
+    text: Palette.lightText,
+    textMuted: Palette.lightTextMuted,
+    textDim: Palette.lightTextDim,
+    background: Palette.lightBg,
+    surface: Palette.lightSurface,
+    card: Palette.lightCard,
+    border: Palette.lightBorder,
+    tint: Palette.primary,
+    icon: '#64748B',
+    tabIconDefault: '#94A3B8',
+    tabIconSelected: Palette.primary,
+    accent: Palette.accent,
   },
   dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
+    text: Palette.lightText,
+    textMuted: Palette.lightTextMuted,
+    textDim: Palette.lightTextDim,
+    background: Palette.lightBg,
+    surface: Palette.lightSurface,
+    card: Palette.lightCard,
+    border: Palette.lightBorder,
+    tint: Palette.primary,
+    icon: '#64748B',
+    tabIconDefault: '#94A3B8',
+    tabIconSelected: Palette.primary,
+    accent: Palette.accent,
   },
 };
 
 export const Fonts = Platform.select({
   ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
     sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
     serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
     rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
     mono: 'ui-monospace',
   },
   default: {
@@ -45,7 +102,7 @@ export const Fonts = Platform.select({
     mono: 'monospace',
   },
   web: {
-    sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+    sans: "'Outfit', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
     serif: "Georgia, 'Times New Roman', serif",
     rounded: "'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif",
     mono: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
